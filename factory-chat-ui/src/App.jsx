@@ -265,7 +265,7 @@ function App() {
                   </button>
 
                   <button
-                    onClick={() => handleSend("气动设备故障怎么恢复")}
+                    onClick={() => handleSend("FAUNC机器人开机零点校准故障报警怎么处理")}
                     className="flex items-center gap-3 p-4 bg-white border border-gray-200 rounded-xl hover:border-blue-400 hover:shadow-md transition-all text-left group"
                   >
                     <div className="w-10 h-10 bg-purple-50 rounded-lg flex items-center justify-center group-hover:bg-blue-50 transition-colors">
@@ -273,7 +273,7 @@ function App() {
                     </div>
                     <div>
                       <div className="font-semibold text-gray-700 group-hover:text-blue-700">维修指导</div>
-                      <div className="text-xs text-gray-400">气动设备故障怎么恢复</div>
+                      <div className="text-xs text-gray-400">FAUNC机器人开机零点校准故障报警怎么处理</div>
                     </div>
                   </button>
                 </div>

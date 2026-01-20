@@ -9,6 +9,15 @@ from app.core.kb_manager import list_files_in_es, delete_file_from_es, ingest_fi
 from fastapi.staticfiles import StaticFiles # 导入 StaticFiles
 from app.core.kb_manager import UPLOAD_DIR # 导入刚才定义的目录变量
 from app.core.kb_manager import IMAGES_DIR
+import logging
+import sys
+
+# 配置日志输出到控制台，级别为 DEBUG
+# logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+# logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
+
+# # 专门开启 LlamaIndex 的调试日志
+# logging.getLogger("llama_index").setLevel(logging.DEBUG)
 
 # 框架搭建: 初始化 FastAPI
 app = FastAPI(title="智能问答模块 API", version="1.0")
