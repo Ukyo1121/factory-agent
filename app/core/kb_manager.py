@@ -138,6 +138,7 @@ async def ingest_file(file: UploadFile):
         verbose=True,
         premium_mode=False, 
         take_screenshot=False,
+        split_by_page=True,
     )
     
     file_extractor = {".pdf": parser, ".docx": parser, ".doc": parser}
@@ -152,13 +153,29 @@ async def ingest_file(file: UploadFile):
         file_extractor=file_extractor
     ).load_data()
 
-    # 6. 将提取到的图片链接，追加到文档内容末尾
-    # 这样，当 RAG 检索到这个文档的文字时，顺便也能看到底部的图片库
+    # 6. 精准分配图片到每一页
     if extracted_images:
-        print(f"🔗 正在将 {len(extracted_images)} 张图片关联到文档元数据...")
+        print(f"🔗 正在将图片精确匹配到对应页码...")
         
         for doc in documents:
-            doc.metadata["image_files"] = extracted_images
+            # LlamaParse 会自动在 metadata 里放入 'page_label' (通常是 "1", "2" 字符串)
+            page_label = doc.metadata.get("page_label")
+            
+            if page_label:
+                # 构造匹配特征，例如 "_p1_" (对应第1页)
+                # 我们的图片命名格式是: base_name_p{页码}_{索引}.ext
+                match_str = f"_p{page_label}_"
+                
+                # 筛选属于这一页的图片
+                page_images = [img for img in extracted_images if match_str in img]
+                
+                # 只把这一页的图片挂载到当前文档
+                if page_images:
+                    doc.metadata["image_files"] = page_images
+            else:
+                # 如果是 Word/Excel 没有页码概念，或者 LlamaParse 没返回页码
+                # 可以选择挂载所有图片，或者不挂载
+                pass
 
     # 7. 存入 ES
     vector_store = ElasticsearchStore(
