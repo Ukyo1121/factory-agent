@@ -1,0 +1,26 @@
+[
+  {
+    "timestamp": "2026-01-21 10:48:49",
+    "query": "错误码666是什么意思",
+    "reason": "未在知识库中找到错误码666的相关信息",
+    "status": "solved",
+    "solved_at": "now",
+    "solution_source": "人工解答_fe51a338.txt"
+  },
+  {
+    "timestamp": "2026-01-21 11:32:16",
+    "query": "自动分拣系统的手动操作页面要怎么操作",
+    "reason": "查询结果主要是FANUC机器人操作和通用手动操作流程，没有找到专门针对自动分拣系统手动操作页面的具体操作方法、界面说明、按钮功能等详细信息",
+    "status": "solved",
+    "solved_at": "now",
+    "solution_source": "自动分拣系统设备使用手册V1.0_2024.12.04.pdf"
+  },
+  {
+    "timestamp": "2026-01-21 12:39:24",
+    "query": "西门子1500PLC与G120C变频器通讯怎么调试",
+    "reason": "知识库中未找到西门子1500PLC与G120C变频器通讯调试的相关文档，查询结果均为通用维修保养内容，与用户问题的关联性很低",
+    "status": "solved",
+    "solved_at": "now",
+    "solution_source": "西门子1500PLC与G120C变频器通讯调试指导手册.pdf"
+  }
+]

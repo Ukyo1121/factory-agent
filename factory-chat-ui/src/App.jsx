@@ -1,12 +1,16 @@
 import { useState, useRef, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { Send, Plus, MessageSquare, User, Bot, Loader2, StopCircle, Zap, Wrench, AlertTriangle } from 'lucide-react';
+import {
+  Send, Plus, MessageSquare, User, Bot, Loader2, StopCircle,
+  Zap, Wrench, AlertTriangle, Database, Mic, ClipboardList
+} from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { Database } from 'lucide-react'; // 引入图标
-import KnowledgeModal from './components/KnowledgeModal'; // 引入组件
+import KnowledgeModal from './components/KnowledgeModal';
+import UnansweredModal from './components/UnansweredModal';
 
-// 后端 API 地址
 const API_URL = "http://localhost:8000/chat";
+// 语音接口地址
+const VOICE_API_URL = "http://localhost:8000/voice-to-text";
 
 function App() {
   // --- 状态管理 ---
@@ -16,19 +20,46 @@ function App() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isKbOpen, setIsKbOpen] = useState(false);
-
   // --- 打字机效果专用状态 ---
   const [streamBuffer, setStreamBuffer] = useState("");
   const [displayedContent, setDisplayedContent] = useState("");
   const [isTyping, setIsTyping] = useState(false);
 
+  // 语音相关状态
+  const [isRecording, setIsRecording] = useState(false);
+  const [isProcessingVoice, setIsProcessingVoice] = useState(false);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+
+  // 待解答问题相关状态
+  const [isUnansweredOpen, setIsUnansweredOpen] = useState(false);
+  const [unansweredCount, setUnansweredCount] = useState(0);
+
   const messagesEndRef = useRef(null);
   const abortControllerRef = useRef(null);
 
-  // --- 初始化 ---
+  // --- 初始化与获取未读数量 ---
   useEffect(() => {
     if (threads.length === 0) createNewThread();
+    fetchUnansweredCount(); // 初始化时获取一次
   }, []);
+
+  // 当弹窗关闭时，重新获取一次数量（因为可能刚刚处理完问题）
+  useEffect(() => {
+    if (!isUnansweredOpen) {
+      fetchUnansweredCount();
+    }
+  }, [isUnansweredOpen]);
+
+  const fetchUnansweredCount = async () => {
+    try {
+      const res = await fetch("http://localhost:8000/admin/unanswered_questions");
+      const data = await res.json();
+      setUnansweredCount(data.count || 0);
+    } catch (e) {
+      console.error("获取待解答数量失败", e);
+    }
+  };
 
   // --- 自动滚动 ---
   useEffect(() => {
@@ -42,7 +73,6 @@ function App() {
       const timer = setTimeout(() => {
         setDisplayedContent(prev => streamBuffer.slice(0, prev.length + 1));
       }, 20);
-
       return () => clearTimeout(timer);
     } else {
       setIsTyping(false);
@@ -71,7 +101,6 @@ function App() {
   // --- 切换会话 ---
   const switchThread = (id) => {
     if (isLoading) return;
-
     if (activeThreadId) {
       setThreads(prev => prev.map(t =>
         t.id === activeThreadId ? { ...t, history: messages } : t
@@ -96,15 +125,11 @@ function App() {
     const textToSend = manualInput || input;
     if (!textToSend.trim() || isLoading) return;
 
-    // 1. UI更新
     setMessages(prev => [...prev, { role: 'user', content: textToSend }]);
     setInput("");
     setIsLoading(true);
     resetTyper();
-
-    // 2. 占位AI消息
     setMessages(prev => [...prev, { role: 'ai', content: "" }]);
-
     abortControllerRef.current = new AbortController();
 
     try {
@@ -119,7 +144,6 @@ function App() {
       });
 
       if (!response.ok) throw new Error("API Error");
-
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
 
@@ -129,14 +153,11 @@ function App() {
         const chunk = decoder.decode(value, { stream: true });
         setStreamBuffer(prev => prev + chunk);
       }
-
-      // 更新标题
       setThreads(prev => prev.map(t =>
         t.id === activeThreadId && t.title === "新对话"
           ? { ...t, title: textToSend }
           : t
       ));
-
     } catch (error) {
       if (error.name !== 'AbortError') {
         setStreamBuffer(prev => prev + "\n\n⚠️ 连接服务器失败，请检查后端。");
@@ -154,9 +175,70 @@ function App() {
     }
   };
 
+  // 录音功能函数
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorderRef.current = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+
+      mediaRecorderRef.current.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorderRef.current.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        await sendAudioToBackend(audioBlob);
+
+        // 停止所有轨道
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorderRef.current.start();
+      setIsRecording(true);
+    } catch (error) {
+      console.error("无法访问麦克风:", error);
+      alert("无法访问麦克风，请检查权限设置。");
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      setIsProcessingVoice(true); // 开始转圈圈等待识别
+    }
+  };
+
+  const sendAudioToBackend = async (audioBlob) => {
+    const formData = new FormData();
+    // 添加文件，文件名后缀很重要，webm 是浏览器录音的标准格式
+    formData.append("file", audioBlob, "voice_input.webm");
+
+    try {
+      const response = await fetch(VOICE_API_URL, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) throw new Error("识别失败");
+
+      const data = await response.json();
+      if (data.text) {
+        setInput(prev => prev + data.text); // 将识别结果追加到输入框
+      }
+    } catch (error) {
+      console.error("语音识别错误:", error);
+      alert("语音识别失败，请重试");
+    } finally {
+      setIsProcessingVoice(false);
+    }
+  };
+
   return (
     <div className="flex h-screen bg-gray-50 text-gray-800 font-sans">
-
       {/* 侧边栏 */}
       <div className="w-64 bg-gray-900 text-white flex flex-col flex-shrink-0">
         <div className="p-4">
@@ -168,7 +250,6 @@ function App() {
             <Plus size={16} /> 新建对话
           </button>
         </div>
-
         <div className="flex-1 overflow-y-auto px-2 custom-scrollbar">
           {threads.map(thread => (
             <button
@@ -178,23 +259,35 @@ function App() {
               className={`w-full text-left p-3 rounded-md mb-1 text-sm flex items-center gap-2 truncate transition-colors ${activeThreadId === thread.id ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-800'
                 }`}
             >
-              {/* 图标：加上 flex-shrink-0 防止被长文本挤扁 */}
               <MessageSquare size={14} className="flex-shrink-0" />
-
-              {/* 文本：加上 truncate 实现自动省略号 */}
               <span className="truncate">{thread.title}</span>
             </button>
           ))}
         </div>
+        {/* 底部按钮区域 */}
+        <div className="p-4 border-t border-gray-800 space-y-2">
+          {/* 1. 知识库按钮 */}
+          <button onClick={() => setIsKbOpen(true)} className="w-full flex items-center gap-2 text-gray-400 hover:text-white hover:bg-gray-800 p-2 rounded-md transition-colors text-sm">
+            <Database size={16} /> 管理知识库
+          </button>
 
-        {/* 侧边栏底部 */}
-        <div className="p-4 border-t border-gray-800">
+          {/* 2. 待解答问题按钮 (动态样式) */}
           <button
-            onClick={() => setIsKbOpen(true)}
-            className="w-full flex items-center gap-2 text-gray-400 hover:text-white hover:bg-gray-800 p-2 rounded-md transition-colors text-sm"
+            onClick={() => setIsUnansweredOpen(true)}
+            className={`w-full flex items-center gap-2 p-2 rounded-md transition-all text-sm group ${unansweredCount > 0
+              ? "text-orange-400 hover:text-orange-300 hover:bg-gray-800 font-medium"  // 有问题：高亮橙色
+              : "text-gray-400 hover:text-white hover:bg-gray-800"                      // 无问题：普通灰色
+              }`}
           >
-            <Database size={16} />
-            管理知识库
+            <ClipboardList size={16} className={unansweredCount > 0 ? "animate-pulse" : ""} />
+            待解答问题库
+
+            {/* 数字徽标 */}
+            {unansweredCount > 0 && (
+              <span className="ml-auto bg-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm group-hover:bg-orange-400">
+                {unansweredCount}
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -211,8 +304,7 @@ function App() {
 
         <div className="flex-1 overflow-y-auto p-4 pb-32 custom-scrollbar">
           <div className="max-w-3xl mx-auto space-y-6 min-h-full flex flex-col">
-
-            {/* 🔥🔥🔥 欢迎界面 🔥🔥🔥 */}
+            {/* 欢迎界面 */}
             {messages.length === 0 && (
               <div className="flex-1 flex flex-col items-center justify-center text-center mt-10">
                 <div className="w-20 h-20 bg-white rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center mb-6">
@@ -284,7 +376,6 @@ function App() {
             {messages.map((msg, idx) => {
               const isLastAiMessage = msg.role === 'ai' && idx === messages.length - 1;
               const contentToShow = isLastAiMessage && (isLoading || isTyping) ? displayedContent : msg.content;
-
               return (
                 <div key={idx} className={`flex gap-4 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   {msg.role === 'ai' && (
@@ -292,7 +383,6 @@ function App() {
                       <Bot size={16} className="text-blue-600" />
                     </div>
                   )}
-
                   <div className={`max-w-[85%] p-4 rounded-2xl text-sm leading-7 shadow-sm ${msg.role === 'user'
                     ? 'bg-blue-600 text-white rounded-br-none'
                     : 'bg-white border border-gray-100 text-gray-800 rounded-bl-none'
@@ -321,12 +411,11 @@ function App() {
                                   </pre>
                                 )
                               },
-                              // 自定义图片渲染
                               img: ({ node, ...props }) => (
                                 <img
                                   {...props}
                                   className="max-w-full h-auto rounded-lg shadow-md my-4 border border-gray-200 cursor-zoom-in"
-                                  onClick={() => window.open(props.src, '_blank')} // 点击在新窗口打开大图
+                                  onClick={() => window.open(props.src, '_blank')}
                                   alt="操作示意图"
                                 />
                               )
@@ -343,7 +432,6 @@ function App() {
                       <div className="whitespace-pre-wrap">{msg.content}</div>
                     )}
                   </div>
-
                   {msg.role === 'user' && (
                     <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0 mt-1">
                       <User size={16} className="text-gray-500" />
@@ -359,7 +447,15 @@ function App() {
         {/* 输入框区域 */}
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-white via-white to-transparent pt-12 pb-6 px-4">
           <div className="max-w-3xl mx-auto relative group">
-            <div className="bg-white border border-gray-300 rounded-xl shadow-lg flex items-end p-2 focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-400 transition-all">
+            {/* 语音识别中的提示条 */}
+            {isRecording && (
+              <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-4 py-1.5 rounded-full text-xs animate-pulse shadow-md flex items-center gap-2 z-20">
+                <span className="w-2 h-2 bg-white rounded-full animate-ping"></span>
+                正在录音... 点击麦克风结束
+              </div>
+            )}
+
+            <div className="bg-white border border-gray-300 rounded-xl shadow-lg flex items-end p-2 gap-2 focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-400 transition-all">
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -369,31 +465,53 @@ function App() {
                     handleSend(null);
                   }
                 }}
-                placeholder="描述故障现象 (如: 机械臂抖动) 或输入错误码..."
+                placeholder={isRecording ? "正在听你说话..." : (isProcessingVoice ? "正在识别语音..." : "描述故障现象 (如: 机械臂抖动) 或输入错误码...")}
                 className="w-full max-h-32 bg-transparent border-none focus:ring-0 resize-none p-3 text-gray-700 placeholder-gray-400 text-sm"
                 rows={1}
-                disabled={isLoading}
+                disabled={isLoading || isRecording || isProcessingVoice}
               />
 
-              {isLoading ? (
-                <button
-                  onClick={handleStop}
-                  className="p-2 rounded-lg mb-1 mr-1 bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
-                >
-                  <StopCircle size={20} />
-                </button>
-              ) : (
-                <button
-                  onClick={() => handleSend(null)}
-                  disabled={!input.trim()}
-                  className={`p-2 rounded-lg mb-1 mr-1 transition-all ${input.trim()
-                    ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-md'
-                    : 'bg-gray-100 text-gray-300 cursor-not-allowed'
-                    }`}
-                >
-                  <Send size={18} />
-                </button>
-              )}
+              {/* 添加麦克风按钮 */}
+              <div className="flex items-center mb-1 gap-1">
+                {/* 如果正在处理语音，显示 Loading */}
+                {isProcessingVoice ? (
+                  <div className="p-2 mr-1">
+                    <Loader2 size={20} className="animate-spin text-blue-500" />
+                  </div>
+                ) : (
+                  <button
+                    onClick={isRecording ? stopRecording : startRecording}
+                    disabled={isLoading}
+                    className={`p-2 rounded-lg transition-all mr-1 ${isRecording
+                      ? 'bg-red-100 text-red-600 hover:bg-red-200 animate-pulse'
+                      : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'
+                      } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    title={isRecording ? "停止录音" : "语音输入"}
+                  >
+                    {isRecording ? <StopCircle size={20} /> : <Mic size={20} />}
+                  </button>
+                )}
+
+                {isLoading ? (
+                  <button
+                    onClick={handleStop}
+                    className="p-2 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
+                  >
+                    <StopCircle size={20} />
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleSend(null)}
+                    disabled={!input.trim()}
+                    className={`p-2 rounded-lg transition-all ${input.trim()
+                      ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-md'
+                      : 'bg-gray-100 text-gray-300 cursor-not-allowed'
+                      }`}
+                  >
+                    <Send size={18} />
+                  </button>
+                )}
+              </div>
             </div>
             <p className="text-center text-xs text-gray-400 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
               AI 内容由 Factory Agent 生成，仅供参考
@@ -402,6 +520,10 @@ function App() {
         </div>
       </div>
       <KnowledgeModal isOpen={isKbOpen} onClose={() => setIsKbOpen(false)} />
+      <UnansweredModal
+        isOpen={isUnansweredOpen}
+        onClose={() => setIsUnansweredOpen(false)}
+      />
     </div>
   );
 }

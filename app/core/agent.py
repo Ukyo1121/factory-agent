@@ -8,6 +8,8 @@ import logging
 import asyncio
 import torch
 import re
+import json
+import datetime
 
 warnings.filterwarnings("ignore")
 os.environ["TRANSFORMERS_VERBOSITY"] = "error"  # 只显示严重错误
@@ -35,6 +37,8 @@ from langgraph.checkpoint.memory import MemorySaver
 # 加载环境变量
 from dotenv import load_dotenv
 load_dotenv(override=True)
+# 定义待解答问题的文件路径
+UNANSWERED_FILE = "unanswered_questions.json"
 
 # ==============================================================================
 # 1. 准备 RAG 引擎
@@ -87,7 +91,7 @@ def search_factory_knowledge(query: str) -> str:
 
         # RAG Engine
         rag_engine = index.as_query_engine(
-            similarity_top_k=15,  # 粗排
+            similarity_top_k=10,  # 粗排
             node_postprocessors=[reranker], # 精排
             verbose=True
         )
@@ -159,8 +163,44 @@ def search_factory_knowledge(query: str) -> str:
             except Exception as e:
                 pass  # 忽略关闭时的错误
 
+@tool
+def record_missing_knowledge(user_query: str, reason: str = "未检索到相关文档") -> str:
+    """
+    当 'search_factory_knowledge' 工具无法在知识库中找到答案，或者检索到的内容与用户问题不匹配时，
+    **必须**调用此工具将问题记录到待解答库中。
+    :param user_query: 用户的原始问题。
+    :param reason: 记录原因（例如：知识库无结果、结果不相关）。
+    :return: 返回记录成功的提示。
+    """
+    print(f"\n📝 [Agent 动作] 正在记录缺失知识: {user_query}")
+    
+    # 构造记录数据
+    record = {
+        "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "query": user_query,
+        "reason": reason,
+        "status": "pending" # pending=待人工处理, solved=已入库
+    }
+
+    # 读取旧数据并追加
+    data = []
+    if os.path.exists(UNANSWERED_FILE):
+        try:
+            with open(UNANSWERED_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except:
+            data = []
+    
+    data.append(record)
+
+    # 写入文件
+    with open(UNANSWERED_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+    return "该问题已成功记录到‘待解答库’，请告知用户工程师将后续补充此知识。"
+
 # 工具列表
-tools = [search_factory_knowledge]
+tools = [search_factory_knowledge, record_missing_knowledge]
 
 # ==============================================================================
 # 3. 构建Agent
@@ -177,13 +217,34 @@ system_prompt = SystemMessage(content="""
     ### 角色定义
     你是一个严谨专业的工厂智能助手。你的任务是根据知识库的内容，回答用户的故障处理或操作问题。
 
-    ### 核心原则
-    1. 遇到故障问题或操作问题，必须优先使用 'search_factory_knowledge' 工具查询知识库。
-    2. 如果查询工具返回了解决方法或操作步骤，请提取出与用户问题相关的答案，清晰地转述给用户。
-    3. 如果查询工具返回内容中的某一步骤有图，你在回答该步骤时就必须带上那张图。不要遗漏。
-    4. 不允许在查询工具返回的内容上增加无中生有的内容，你只能对查询的结果进行整合或提取，然后清晰地回答用户，**严禁编造**。
-    5. 如果查询结果不足以支撑你回答用户的问题或与用户的问题关联性很小，请你诚实回答查询不到相关结果，或追问用户问题的细节。
-    6. 如果用户的问题不清晰（例如只说了“机器坏了”），请追问具体的错误码或故障现象，不要瞎猜。
+    ### 核心工作流 (必须严格执行以下步骤)
+    
+    **第1步：提取关键实体**
+    - 分析用户问题，提取核心设备/系统名称（例如：“自动分拣系统”、“FANUC机器人”、“传送带”）。
+    - 记住这个核心实体，它是本次回答的“主语”。
+
+    **第2步：查询并审查 (关键一步)**
+    - 调用 `search_factory_knowledge` 查询知识库。
+    - **审查查询结果的主语**：
+      - 仔细阅读查询到的每一段文字，寻找其中提到的设备名称。
+      - **匹配检查示例**：
+        - 用户问：“自动分拣系统” -> 查询内容：“机器人手动操作...” -> **不匹配！** (这是张冠李戴)
+        - 用户问：“自动分拣系统” -> 查询内容：“分拣单元操作...” -> **匹配。**
+        - 用户问：“自动分拣系统” -> 查询内容完全没提设备名，只说“按下红色按钮” -> **高风险！** 除非你能从上下文（如文件名）确信这是分拣系统，否则视为不匹配。
+
+    **第3步：决策与行动**
+    - **情况 A (主语匹配 且 内容相关)**：
+      - 对查询的结果进行整合或提取，清晰准确地回答用户。
+    - **情况 B (主语不匹配 或 查询工具返回“未在知识库中找到相关内容” 或 返回的内容与用户问题的关联性很低，不足以支撑你回答用户的问题)**：
+      - **绝对禁止**强行拼凑答案。例如：不要把机器人的操作安在分拣系统头上。
+      - **必须**调用 `record_missing_knowledge` 工具，将问题记录到待解答库。
+      - 礼貌回复用户：“抱歉，当前知识库中暂未收录此问题。但我已将其自动记录到【待解答问题库】，工程师将在后续更新中补充该内容。”
+                              
+    ### 注意事项
+    1. 你输出的内容务必能够**完整**地契合用户的问题，例如用户提问“自动分拣系统的手动操作流程”，查询工具返回的内容只包含“手动操作流程”，但缺少“自动分拣系统”这个关键词，也要视为无法回答用户问题，需要将该问题存入待解答问题库。
+    2. 如果查询工具返回内容中的某一步骤有图，你在回答该步骤时就必须带上那张图。不要遗漏。
+    3. 不允许在查询工具返回的内容上增加无中生有的内容，你只能对查询的结果进行整合或提取，然后清晰地回答用户，**严禁编造**。
+    4. 如果用户的问题不清晰（例如只说了“机器坏了”），请追问具体的错误码或故障现象等问题的细节，不要瞎猜。
 
     ### 图文匹配逻辑
     如果查询工具返回的内容中包含 Markdown 格式的图片链接（如 `![示意图](http://...)`）。你必须严格遵守以下规则：

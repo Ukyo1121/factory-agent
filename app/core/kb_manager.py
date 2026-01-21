@@ -5,7 +5,7 @@ import shutil
 import fitz  # PyMuPDF
 import nest_asyncio
 import requests
-from typing import List, Dict
+from typing import List, Dict,Optional
 from fastapi import UploadFile
 from llama_index.core import Document, VectorStoreIndex, StorageContext, Settings,SimpleDirectoryReader
 from llama_index.vector_stores.elasticsearch import ElasticsearchStore
@@ -145,29 +145,28 @@ def delete_file_from_es(filename: str) -> bool:
 # -----------------------------------------------------------
 # 3. 入库入口
 # -----------------------------------------------------------
-async def ingest_file(file: UploadFile):
-    # 1. 保存原文件
-    file_path = os.path.join(UPLOAD_DIR, file.filename)
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    
-    print(f"📂 处理文件: {file.filename}")
+# 新增：通用入库逻辑（接收本地文件路径）
+async def ingest_from_local_path(file_path: str, original_filename: str):
+    print(f"📂 开始处理本地文件: {original_filename}")
 
-    # 2. 使用自定义的图文混排解析器
-    # 这一步会直接返回已经按照 (文字-图片-文字) 排好序的 Document 列表
+    # 1. 解析文档
     documents = []
-    if file.filename.lower().endswith(".pdf"):
-        documents = parse_pdf_with_layout(file_path, file.filename)
+    if original_filename.lower().endswith(".pdf"):
+        documents = parse_pdf_with_layout(file_path, original_filename)
     else:
-        # 非 PDF 文件简单处理
+        # 对于 txt, md, docx 等，使用 SimpleDirectoryReader
         documents = SimpleDirectoryReader(input_files=[file_path]).load_data()
+        # 确保 metadata 里有文件名
+        for doc in documents:
+            doc.metadata["file_name"] = original_filename
+            doc.metadata["page_label"] = "1" # 非PDF默认为第1页
 
-    # 3. 显存保护
+    # 2. 显存保护配置
     Settings.embed_model = GLOBAL_EMBED_MODEL
     Settings.chunk_size = 512
 
-    # 4. 存入 ES
-    print(f"⏳ 开始向量化入库...")
+    # 3. 存入 ES
+    print(f"⏳ 开始向量化入库 ({len(documents)} 个片段)...")
     vector_store = ElasticsearchStore(
         es_url=ES_URL,
         index_name=INDEX_NAME,
@@ -180,5 +179,15 @@ async def ingest_file(file: UploadFile):
         show_progress=True
     )
     
-    print("🎉 入库完成！")
+    print(f"🎉 {original_filename} 入库完成！")
     return len(documents)
+
+# 处理上传文件
+async def ingest_file(file: UploadFile):
+    # 1. 保存文件到磁盘
+    file_path = os.path.join(UPLOAD_DIR, file.filename)
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    # 2. 调用通用逻辑
+    return await ingest_from_local_path(file_path, file.filename)

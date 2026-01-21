@@ -11,3 +11,6 @@ __pycache__/
 # 忽略本地图片和文档
 factory_images/
 factory_docs/
+
+# 忽略本地下载的语音模型
+models/
