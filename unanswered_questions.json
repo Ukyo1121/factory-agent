@@ -22,5 +22,13 @@
     "status": "solved",
     "solved_at": "now",
     "solution_source": "西门子1500PLC与G120C变频器通讯调试指导手册.pdf"
+  },
+  {
+    "timestamp": "2026-01-21 14:19:29",
+    "query": "错误码666是什么意思",
+    "reason": "未在知识库中找到错误码666的相关信息。知识库中的视觉算法异常码清单只包含从0.0到306.0的错误码，维修保养手册中也没有提到错误码666的具体含义。",
+    "status": "solved",
+    "solved_at": "now",
+    "solution_source": "错误码666解决方案.txt"
   }
 ]

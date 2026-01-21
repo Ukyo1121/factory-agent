@@ -1,12 +1,13 @@
 // src/components/UnansweredModal.jsx
 import { useState, useEffect } from 'react';
-import { ClipboardList, CheckCircle, Loader2, FileUp } from 'lucide-react';
+import { ClipboardList, CheckCircle, Loader2, FileUp, FileText } from 'lucide-react'; // 引入 FileText 图标
 
 export default function UnansweredModal({ isOpen, onClose }) {
     // --- 内部状态 ---
     const [unansweredList, setUnansweredList] = useState([]);
     const [selectedQuestion, setSelectedQuestion] = useState(null); // 当前选中的问题
     const [solveText, setSolveText] = useState(""); // 回答文本
+    const [customFileName, setCustomFileName] = useState(""); // 自定义文件名
     const [solveFile, setSolveFile] = useState(null); // 回答文件
     const [isSolving, setIsSolving] = useState(false); // 提交Loading状态
 
@@ -28,6 +29,7 @@ export default function UnansweredModal({ isOpen, onClose }) {
             // 重置状态
             setSelectedQuestion(null);
             setSolveText("");
+            setCustomFileName("");
             setSolveFile(null);
         }
     }, [isOpen]);
@@ -39,7 +41,15 @@ export default function UnansweredModal({ isOpen, onClose }) {
 
         const formData = new FormData();
         formData.append("query", selectedQuestion.query);
-        if (solveText) formData.append("answer_text", solveText);
+
+        if (solveText) {
+            formData.append("answer_text", solveText);
+            // 如果输入了文件名，则添加到请求中
+            if (customFileName.trim()) {
+                formData.append("custom_filename", customFileName.trim());
+            }
+        }
+
         if (solveFile) formData.append("file", solveFile);
 
         try {
@@ -52,6 +62,7 @@ export default function UnansweredModal({ isOpen, onClose }) {
             alert("解答已提交，并成功入库！");
             // 成功后：重置表单，刷新列表，返回列表页
             setSolveText("");
+            setCustomFileName("");
             setSolveFile(null);
             setSelectedQuestion(null);
             fetchUnanswered();
@@ -107,6 +118,20 @@ export default function UnansweredModal({ isOpen, onClose }) {
 
                             <div className="pt-2 space-y-3">
                                 <label className="block text-sm font-bold text-gray-700">人工解答 (输入文字)</label>
+
+                                {/* 自定义文件名输入框 */}
+                                <div className="flex items-center gap-2 mb-2">
+                                    <FileText size={16} className="text-gray-400" />
+                                    <input
+                                        type="text"
+                                        className="flex-1 border-b border-gray-200 focus:border-blue-500 outline-none text-sm py-1 bg-transparent placeholder-gray-300"
+                                        placeholder="自定义生成的文件名 (可选，默认为随机ID)"
+                                        value={customFileName}
+                                        onChange={e => setCustomFileName(e.target.value)}
+                                    />
+                                    <span className="text-xs text-gray-400 font-mono">.txt</span>
+                                </div>
+
                                 <textarea
                                     className="w-full border border-gray-200 rounded-lg p-3 text-sm h-32 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all resize-none"
                                     placeholder="请输入详细的解决方案、操作步骤或维修建议..."
@@ -143,6 +168,7 @@ export default function UnansweredModal({ isOpen, onClose }) {
                                     onClick={() => {
                                         setSelectedQuestion(null);
                                         setSolveText("");
+                                        setCustomFileName("");
                                         setSolveFile(null);
                                     }}
                                     className="flex-1 py-2.5 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 hover:text-gray-900 font-medium transition-colors"

@@ -130,6 +130,7 @@ def get_unanswered_questions():
 async def solve_question(
     query: str = Form(...),
     answer_text: Optional[str] = Form(None),
+    custom_filename: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None)
 ):
     """
@@ -155,9 +156,19 @@ async def solve_question(
 
         # 情况2：纯文字回答 (生成一个 .txt 文件)
         elif answer_text:
-            # 生成一个带时间戳的文件名，避免冲突
-            short_id = str(uuid.uuid4())[:8]
-            txt_filename = f"人工解答_{short_id}.txt"
+            # 确定文件名
+            if custom_filename and custom_filename.strip():
+                # 使用用户自定义的文件名
+                safe_name = custom_filename.strip()
+                # 自动补全 .txt 后缀
+                if not safe_name.lower().endswith(".txt"):
+                    safe_name += ".txt"
+                txt_filename = safe_name
+            else:
+                # 默认逻辑：生成带随机ID的文件名
+                short_id = str(uuid.uuid4())[:8]
+                txt_filename = f"人工解答_{short_id}.txt"
+            
             txt_path = os.path.join(UPLOAD_DIR, txt_filename)
             
             # 写入内容：明确的问题和答案格式
