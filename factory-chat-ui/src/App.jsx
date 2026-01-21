@@ -2,11 +2,12 @@ import { useState, useRef, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import {
   Send, Plus, MessageSquare, User, Bot, Loader2, StopCircle,
-  Zap, Wrench, AlertTriangle, Database, Mic, ClipboardList
+  Zap, Wrench, AlertTriangle, Database, Mic, ClipboardList, BarChart2
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import KnowledgeModal from './components/KnowledgeModal';
 import UnansweredModal from './components/UnansweredModal';
+import LifecycleDashboard from './components/LifecycleDashboard';
 
 const API_URL = "http://localhost:8000/chat";
 // 语音接口地址
@@ -34,7 +35,8 @@ function App() {
   // 待解答问题相关状态
   const [isUnansweredOpen, setIsUnansweredOpen] = useState(false);
   const [unansweredCount, setUnansweredCount] = useState(0);
-
+  // 可视化面板状态
+  const [isDashboardOpen, setIsDashboardOpen] = useState(false);
   const messagesEndRef = useRef(null);
   const abortControllerRef = useRef(null);
 
@@ -289,6 +291,14 @@ function App() {
               </span>
             )}
           </button>
+          {/* 3. 可视化面板按钮 */}
+          <button
+            onClick={() => setIsDashboardOpen(true)}
+            className="w-full flex items-center gap-2 text-blue-400 hover:text-blue-300 hover:bg-gray-800 p-2 rounded-md transition-colors text-sm"
+          >
+            <BarChart2 size={16} />
+            零件生命周期可视化面板
+          </button>
         </div>
       </div>
 
@@ -524,6 +534,7 @@ function App() {
         isOpen={isUnansweredOpen}
         onClose={() => setIsUnansweredOpen(false)}
       />
+      <LifecycleDashboard isOpen={isDashboardOpen} onClose={() => setIsDashboardOpen(false)} />
     </div>
   );
 }

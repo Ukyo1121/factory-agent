@@ -4,6 +4,8 @@ import shutil
 import json
 import uuid
 from typing import Optional
+import pandas as pd
+import io
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -204,3 +206,49 @@ async def solve_question(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+    
+# --------------------------------------------------------------------------
+# 5. 零件生命周期数据可视化接口
+# --------------------------------------------------------------------------
+
+@app.post("/api/upload_lifecycle")
+async def upload_lifecycle_data(file: UploadFile = File(...)):
+    """
+    接收 CSV 或 Excel 文件，解析为 JSON 数据供前端可视化使用
+    """
+    try:
+        contents = await file.read()
+        filename = file.filename.lower()
+        
+        df = None
+        
+        # --- 分支 1: 处理 Excel (.xlsx) ---
+        if filename.endswith(".xlsx") or filename.endswith(".xls"):
+            # read_excel 需要二进制流 (BytesIO)，不需要 decode
+            df = pd.read_excel(io.BytesIO(contents))
+            
+        # --- 分支 2: 处理 CSV (.csv) ---
+        else:
+            # read_csv 需要文本流，尝试 utf-8 和 gbk 解码
+            try:
+                df = pd.read_csv(io.StringIO(contents.decode('utf-8')))
+            except UnicodeDecodeError:
+                df = pd.read_csv(io.StringIO(contents.decode('gbk')))
+        
+        # --- 通用数据清洗逻辑 ---
+        # 确保数值列是数字类型，如果为空则填0
+        numeric_cols = ['总耗时(分钟)', '坐标 X', '坐标 Y']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        
+        # 填充空字符串，防止前端报错
+        df = df.fillna("")
+
+        # 将 DataFrame 转为字典列表返回
+        data = df.to_dict(orient="records")
+        return {"data": data, "count": len(data)}
+        
+    except Exception as e:
+        print(f"文件解析错误: {e}")
+        return {"error": f"解析失败: {str(e)}"}
