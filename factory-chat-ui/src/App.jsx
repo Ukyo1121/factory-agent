@@ -354,7 +354,7 @@ function App() {
                   </button>
 
                   <button
-                    onClick={() => handleSend("自动分拣系统的操作步骤")}
+                    onClick={() => handleSend("教我使用自动分拣系统的手动操作页面")}
                     className="flex items-center gap-3 p-4 bg-white border border-gray-200 rounded-xl hover:border-blue-400 hover:shadow-md transition-all text-left group"
                   >
                     <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center group-hover:bg-blue-50 transition-colors">
@@ -362,20 +362,20 @@ function App() {
                     </div>
                     <div>
                       <div className="font-semibold text-gray-700 group-hover:text-blue-700">操作规程</div>
-                      <div className="text-xs text-gray-400">自动分拣系统的操作步骤</div>
+                      <div className="text-xs text-gray-400">教我使用自动分拣系统的手动操作页面</div>
                     </div>
                   </button>
 
                   <button
-                    onClick={() => handleSend("FAUNC机器人开机零点校准故障报警怎么处理")}
+                    onClick={() => handleSend("FANUC机器人开机零点校准故障报警怎么处理")}
                     className="flex items-center gap-3 p-4 bg-white border border-gray-200 rounded-xl hover:border-blue-400 hover:shadow-md transition-all text-left group"
                   >
                     <div className="w-10 h-10 bg-purple-50 rounded-lg flex items-center justify-center group-hover:bg-blue-50 transition-colors">
-                      <Bot size={20} className="text-purple-600 group-hover:text-blue-600" />
+                      <Bot size={20} className="text-purNUple-600 group-hover:text-blue-600" />
                     </div>
                     <div>
                       <div className="font-semibold text-gray-700 group-hover:text-blue-700">维修指导</div>
-                      <div className="text-xs text-gray-400">FAUNC机器人开机零点校准故障报警怎么处理</div>
+                      <div className="text-xs text-gray-400">FANUC机器人开机零点校准故障报警怎么处理</div>
                     </div>
                   </button>
                 </div>

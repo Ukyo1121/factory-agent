@@ -21,13 +21,11 @@ from app.core.kb_manager import list_files_in_es, delete_file_from_es, ingest_fi
 # --------------------------------------------------------------------------
 # 为了防止显存(VRAM)溢出，强制使用 "cpu" 和 "int8" 量化
 # "small" 模型对中文识别效果很好，且在 CPU 上运行速度也很快
-print("🎤 正在加载本地语音模型 (faster-whisper-small)...")
 try:
     # download_root 可以指定模型下载路径，避免每次都下
     voice_model = WhisperModel("small", device="cpu", compute_type="int8", download_root="./models/whisper")
-    print("✅ 语音模型加载完成！")
 except Exception as e:
-    print(f"❌ 语音模型加载失败: {e}")
+    print(f"语音模型加载失败: {e}")
     voice_model = None
 
 # --------------------------------------------------------------------------
