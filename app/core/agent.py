@@ -46,6 +46,8 @@ UNANSWERED_FILE = "unanswered_questions.json"
 # 定义本地图片存储路径
 IMAGES_DIR = "./factory_images"
 
+es_url = os.getenv("ELASTICSEARCH_URL", "http://elasticsearch:9200") 
+
 # ==============================================================================
 # 1. 准备 RAG 引擎
 # ==============================================================================
@@ -81,7 +83,7 @@ def search_factory_knowledge(query: str) -> str:
     try:
         # 连接 ES 数据库
         vector_store = ElasticsearchStore(
-            es_url="http://localhost:9200",
+            es_url=es_url,
             index_name="factory_knowledge",
         )
         index = VectorStoreIndex.from_vector_store(vector_store=vector_store)

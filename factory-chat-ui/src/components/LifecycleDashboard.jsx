@@ -168,7 +168,7 @@ const LifecycleDashboard = ({ isOpen, onClose }) => {
                         <ArrowLeft size={24} />
                     </button>
                     <div>
-                        <h1 className="text-xl font-bold text-slate-800">生产流转实时看板</h1>
+                        <h1 className="text-xl font-bold text-slate-800">生产监测看板</h1>
                         <div className="flex items-center gap-2 text-xs text-slate-500">
                             <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
                             系统在线 · 共 {totalTasks} 条数据

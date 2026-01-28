@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 nest_asyncio.apply()
 
-ES_URL = "http://localhost:9200"
+ES_URL = os.getenv("ELASTICSEARCH_URL", "http://elasticsearch:9200")
 INDEX_NAME = "factory_knowledge"
 UPLOAD_DIR = "./factory_docs"
 IMAGES_DIR = "./factory_images"
