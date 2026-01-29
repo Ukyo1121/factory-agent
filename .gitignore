@@ -12,5 +12,8 @@ __pycache__/
 factory_images/
 factory_docs/
 
-# 忽略本地下载的语音模型
+# 忽略本地下载的模型
 models/
+
+# 忽略镜像文件
+my_images.tar

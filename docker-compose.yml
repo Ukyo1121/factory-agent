@@ -28,9 +28,7 @@ services:
 
   # 2. 后端服务
   backend:
-    build:
-      context: .
-      dockerfile: Dockerfile.backend
+    image: factory_agent-backend:latest
     container_name: factory_backend
     ports:
       - "8000:8000"
@@ -39,9 +37,11 @@ services:
       - ./factory_docs:/app/factory_docs
       - ./factory_images:/app/factory_images
       - ./unanswered_questions.json:/app/unanswered_questions.json
-      # 挂载本地模型目录，避免每次重启都下载
-      # - ./models:/app/models
+      # 挂载模型目录
+      - ./models:/app/models
     environment:
+      - HF_HOME=/app/models
+      - SENTENCE_TRANSFORMERS_HOME=/app/models
       - ELASTICSEARCH_URL=http://elasticsearch:9200
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY} # 从 .env 文件读取 Key
     depends_on:
@@ -51,9 +51,7 @@ services:
 
   # 3. 前端服务
   frontend:
-    build:
-      context: ./factory-chat-ui
-      dockerfile: Dockerfile.frontend
+    image: factory_agent-frontend:latest
     container_name: factory_frontend
     ports:
       - "80:80"

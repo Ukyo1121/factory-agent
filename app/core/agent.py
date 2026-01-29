@@ -61,7 +61,7 @@ Settings.llm = None
 
 # 配置 Reranker (核心竞争力: 重排序)
 reranker = FlagEmbeddingReranker(
-    model="BAAI/bge-reranker-base", 
+    model="BAAI/bge-reranker-v2-m3", 
     top_n=5,
     use_fp16=True  # 必须开启半精度，进一步省显存
 )
