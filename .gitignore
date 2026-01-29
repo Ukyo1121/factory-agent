@@ -14,3 +14,6 @@ factory_docs/
 
 # 忽略本地下载的语音模型
 models/
+
+# 忽略打包的镜像文件
+my_images.tar
