@@ -28,12 +28,13 @@ services:
 
   # 2. 后端服务
   backend:
-    image: factory_agent-backend:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
     container_name: factory_backend
     ports:
       - "8000:8000"
     volumes:
-      - ./:/app
       # 挂载数据目录，确保上传的文件和图片持久化
       - ./factory_docs:/app/factory_docs
       - ./factory_images:/app/factory_images

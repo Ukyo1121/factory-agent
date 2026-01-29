@@ -54,7 +54,7 @@ API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 # ==============================================================================
 
 # 配置 Embedding
-GLOBAL_EMBED_MODEL = HuggingFaceEmbedding(model_name="BAAI/bge-m3")
+GLOBAL_EMBED_MODEL = HuggingFaceEmbedding(model_name="models/hub/models--BAAI--bge-m3")
 
 Settings.embed_model = GLOBAL_EMBED_MODEL
 
@@ -62,7 +62,7 @@ Settings.llm = None
 
 # 配置 Reranker (核心竞争力: 重排序)
 reranker = FlagEmbeddingReranker(
-    model="BAAI/bge-reranker-v2-m3", 
+    model="models/hub/models--BAAI--bge-reranker-v2-m3", 
     top_n=5,
     use_fp16=True  # 必须开启半精度，进一步省显存
 )

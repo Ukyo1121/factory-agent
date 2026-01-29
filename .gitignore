@@ -17,3 +17,4 @@ models/
 
 # 忽略镜像文件
 my_images.tar
+frontend_latest.tar
