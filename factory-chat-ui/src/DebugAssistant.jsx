@@ -5,10 +5,16 @@ import {
     Terminal, ArrowLeft, Mic, StopCircle
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+<<<<<<< HEAD
 import { API_BASE_URL } from "./config";
 
 const API_URL = `${API_BASE_URL}/chat`;
 const VOICE_API_URL = `${API_BASE_URL}/voice`;
+=======
+
+const API_URL = "http://localhost:8000/chat";
+const VOICE_API_URL = "http://localhost:8000/voice-to-text";
+>>>>>>> 310e5c36683f473e43a1394ab0af9a36e2ee32d8
 
 export default function DebugAssistant({ onBack }) {
     const [threads, setThreads] = useState([]);
