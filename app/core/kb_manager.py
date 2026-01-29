@@ -19,6 +19,7 @@ ES_URL = os.getenv("ELASTICSEARCH_URL", "http://elasticsearch:9200")
 INDEX_NAME = "factory_knowledge"
 UPLOAD_DIR = "./factory_docs"
 IMAGES_DIR = "./factory_images"
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 # 确保目录存在
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -70,7 +71,7 @@ def parse_pdf_with_layout(pdf_path: str, file_name: str) -> List[Document]:
             
             # 构造 Markdown 图片链接
             # 这里直接生成 URL，稍后拼接到文本里
-            img_url = f"http://localhost:8000/images/{image_filename}"
+            img_url = f"{API_BASE_URL}/images/{image_filename}"
             markdown_img = f"\n\n![示意图]({img_url})\n\n"
             
             # 存入列表: (坐标, 类型, 内容)

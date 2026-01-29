@@ -47,6 +47,7 @@ UNANSWERED_FILE = "unanswered_questions.json"
 IMAGES_DIR = "./factory_images"
 
 es_url = os.getenv("ELASTICSEARCH_URL", "http://elasticsearch:9200") 
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 # ==============================================================================
 # 1. 准备 RAG 引擎
@@ -235,8 +236,7 @@ def convert_to_multimodal_messages(messages):
         new_content_blocks = []
         
         # 正则匹配 Markdown 图片链接
-        pattern = r'!\[.*?\]\((http://localhost:8000/images/(.*?))\)'
-        
+        pattern = rf'!\[.*?\]\(({re.escape(API_BASE_URL)}/images/(.*?))\)'
         last_end = 0
         for match in re.finditer(pattern, text_content):
             start, end = match.span()

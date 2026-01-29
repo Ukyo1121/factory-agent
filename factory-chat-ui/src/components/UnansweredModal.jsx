@@ -1,6 +1,7 @@
 // src/components/UnansweredModal.jsx
 import { useState, useEffect } from 'react';
 import { ClipboardList, CheckCircle, Loader2, FileUp, FileText } from 'lucide-react'; // 引入 FileText 图标
+import { API_BASE_URL } from "../config";
 
 export default function UnansweredModal({ isOpen, onClose }) {
     // --- 内部状态 ---
@@ -14,7 +15,7 @@ export default function UnansweredModal({ isOpen, onClose }) {
     // --- 获取待解答列表 ---
     const fetchUnanswered = async () => {
         try {
-            const res = await fetch("http://localhost:8000/admin/unanswered_questions");
+            const res = await fetch(`${API_BASE_URL}/admin/unanswered_questions`);
             const data = await res.json();
             setUnansweredList(data.questions || []);
         } catch (e) {
@@ -53,7 +54,7 @@ export default function UnansweredModal({ isOpen, onClose }) {
         if (solveFile) formData.append("file", solveFile);
 
         try {
-            const res = await fetch("http://localhost:8000/admin/solve_question", {
+            const res = await fetch(`${API_BASE_URL}/admin/solve_question`, {
                 method: "POST",
                 body: formData
             });

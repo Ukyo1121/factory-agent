@@ -9,9 +9,10 @@ import ReactMarkdown from 'react-markdown';
 import KnowledgeModal from './components/KnowledgeModal';
 import UnansweredModal from './components/UnansweredModal';
 import LifecycleDashboard from './components/LifecycleDashboard';
+import { API_BASE_URL } from "./config";
 
-const API_URL = "http://localhost:8000/chat";
-const VOICE_API_URL = "http://localhost:8000/voice-to-text";
+const API_URL = `${API_BASE_URL}/chat`;
+const VOICE_API_URL = `${API_BASE_URL}/voice`;
 
 function App() {
   // --- 状态管理 ---
@@ -56,7 +57,8 @@ function App() {
 
   const fetchUnansweredCount = async () => {
     try {
-      const res = await fetch("http://localhost:8000/admin/unanswered_questions");
+
+      const res = await fetch(`${API_BASE_URL}/admin/unanswered_questions`);
       const data = await res.json();
       setUnansweredCount(data.count || 0);
     } catch (e) {

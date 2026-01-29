@@ -8,6 +8,7 @@ import {
     Activity, Clock, MapPin, Package, Layers, Search,
     UploadCloud, ArrowLeft, Timer, MousePointer2, AlertTriangle, FileText, X
 } from 'lucide-react';
+import { API_BASE_URL } from "../config";
 
 // 炫彩配色
 const COLORS = ['#6366f1', '#ec4899', '#8b5cf6', '#14b8a6', '#f59e0b', '#3b82f6'];
@@ -30,7 +31,7 @@ const LifecycleDashboard = ({ isOpen, onClose }) => {
 
         try {
             // 注意：确保端口号与后端一致
-            const response = await fetch('http://localhost:8000/api/upload_lifecycle', {
+            const response = await fetch(`${API_BASE_URL}/api/upload_lifecycle`, {
                 method: 'POST',
                 body: formData,
             });

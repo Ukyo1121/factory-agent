@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, Trash2, Upload, FileText, RefreshCw, Loader2 } from 'lucide-react';
-
-const API_BASE = "http://localhost:8000";
+import { API_BASE_URL } from "../config";
+const API_BASE = API_BASE_URL;
 
 // 定义点击打开文件的函数
 const handleOpenFile = (filename) => {
