@@ -37,6 +37,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg_pool import AsyncConnectionPool
 from contextlib import asynccontextmanager
 from passlib.context import CryptContext
+from app.core.video_manager import load_metadata
 
 # 加载环境变量
 from dotenv import load_dotenv
@@ -79,7 +80,7 @@ Settings.llm = None
 # 配置 Reranker (核心竞争力: 重排序)
 reranker = FlagEmbeddingReranker(
     model="models/hub/models--BAAI--bge-reranker-base", 
-    top_n=5,
+    top_n=15,
     use_fp16=True  # 必须开启半精度，进一步省显存
 )
 
@@ -107,7 +108,7 @@ def search_factory_knowledge(query: str) -> str:
 
         # RAG Engine
         rag_engine = index.as_query_engine(
-            similarity_top_k=10,  # 粗排
+            similarity_top_k=20,  # 粗排
             node_postprocessors=[reranker], # 精排
             verbose=True,
             response_mode="no_text"
@@ -369,6 +370,7 @@ system_prompt = SystemMessage(content="""
     **你必须使用标准的 OpenAI Function Calling 格式。**
     **严禁**输出 `<tool_call>`, `<function>` 等 XML 标签。
     **严禁**输出 Base64 编码。
+    【严格限制】在输出内容时，如果提供的知识库检索结果中没有包含具体的图片 URL 链接，**严禁**自己捏造、猜测或生成任何 Markdown 格式的图片链接（如 ![图](url)）。
                               
     ### 回答格式
     - 使用清晰的 Markdown 格式。
@@ -405,31 +407,22 @@ async def call_model(state: AgentState):
     messages_with_images = convert_to_multimodal_messages(messages)
     
     # ==================== [智能检测搜索次数] ====================
-    search_count = 0  # 改为计数器
+    search_count = 0  
     
-    # 倒序遍历消息，只检查“当前用户提问之后”产生的动作
     for i in range(len(messages) - 1, -1, -1):
         msg = messages[i]
-        
-        # 遇到用户消息，说明回到了上一轮，停止检查
         if isinstance(msg, HumanMessage):
             break
-            
-        # 检查 AI 消息中的工具调用
         if isinstance(msg, AIMessage) and msg.tool_calls:
             for tc in msg.tool_calls:
                 if tc["name"] == "search_factory_knowledge":
                     search_count += 1
-                    # 注意：这里去掉了 break，以便统计本轮所有的搜索次数
     
     print(f"🔍 [系统检测] 本轮对话已搜索次数: {search_count}")
 
-    # 动态构建工具列表
     current_tools = list(tools)
-    
-    # 修改判断条件：只有当搜索次数达到 3 次时，才移除搜索工具
     if search_count >= 3:
-        print(f"🛑 [系统强制] 检测到**本轮对话**已搜索 {search_count} 次（达到上限），正在移除搜索工具...")
+        print(f"🛑 [系统强制] 检测到本轮对话已搜索 {search_count} 次，正在移除搜索工具...")
         current_tools = [t for t in tools if t.name != "search_factory_knowledge"]
     
     model_with_tools = llm.bind_tools(current_tools)
@@ -437,39 +430,17 @@ async def call_model(state: AgentState):
     
     try:
         response = await model_with_tools.ainvoke(messages_with_images)
-        
-        # ==================== [XML 强力修复补丁] ====================
         content_str = str(response.content)
         
+        # ==================== [XML 强力修复补丁] ====================
+        # 只做格式转换，不再这里做业务拦截逻辑
         if not response.tool_calls and ("<tool_call>" in content_str or "<function=" in content_str):
             print(f"⚠️ [兼容性修复] 检测到 Qwen 返回了 XML...")
-            
             func_pattern = r"<function=['\"]?(\w+)['\"]?>| <function=['\"]?(\w+)['\"]?>"
             func_match = re.search(func_pattern, content_str)
             
             if func_match:
                 func_name = func_match.group(1) or func_match.group(2)
-                
-                # --- [防死循环拦截器]  ---
-                # 如果搜索次数已达上限 (>=3)，但模型还想搜，强制转为记录
-                if search_count >= 3 and func_name == "search_factory_knowledge":
-                    print(f"🛡️ [拦截成功] 模型试图第 {search_count + 1} 次搜索，系统强制转换为‘记录缺失知识’...")
-                    func_name = "record_missing_knowledge"
-                    q_match = re.search(r"<parameter=query>(.*?)</parameter>", content_str, re.DOTALL)
-                    query_val = q_match.group(1).strip() if q_match else "用户遇到的未知问题"
-                    
-                    response.tool_calls = [{
-                        "name": func_name,
-                        "args": {
-                            "user_query": query_val,
-                            "reason": "自动拦截：多次检索（3次）无果，强制转入待解答库"
-                        },
-                        "id": f"call_{uuid.uuid4().hex[:8]}"
-                    }]
-                    response.content = ""
-                    return {"messages": [response]}
-                # -----------------------
-
                 args = {}
                 if func_name == "search_factory_knowledge":
                     q_match = re.search(r"<parameter=query>(.*?)</parameter>", content_str, re.DOTALL)
@@ -483,7 +454,6 @@ async def call_model(state: AgentState):
                     else: args["reason"] = "未检索到相关文档"
                 
                 if args:
-                    print(f"🔧 [修复成功] 提取到工具: {func_name}, 参数: {args}")
                     response.tool_calls = [{
                         "name": func_name,
                         "args": args,
@@ -495,6 +465,64 @@ async def call_model(state: AgentState):
                 clean_content = re.sub(r"<tool_call>.*?</tool_call>", "", str(response.content), flags=re.DOTALL)
                 response.content = clean_content.strip()
 
+        # ==================== [100% 绝对拦截器] ====================
+        # 此时无论上面是原生 JSON 还是 XML 转换的，工具调用都在 response.tool_calls 里
+        if response.tool_calls and search_count >= 3:
+            for tc in response.tool_calls:
+                # 即使模型幻觉强行输出了搜索工具，我们在这里“狸猫换太子”
+                if tc["name"] == "search_factory_knowledge":
+                    print(f"🛡️ [绝对拦截] 模型试图强行进行第 {search_count + 1} 次搜索，系统强制篡改为‘记录缺失知识’...")
+                    tc["name"] = "record_missing_knowledge"
+                    # 尝试保留它本想搜的词
+                    query_val = tc["args"].get("query", "未知问题")
+                    tc["args"] = {
+                        "user_query": query_val,
+                        "reason": "自动拦截：多次检索（3次）无果，强制转入待解答库"
+                    }
+        # ==========================================================
+        # ==================== [视频预览卡片注入] ====================
+        # 当模型没有调用工具，说明这是发给用户的最终回答
+        if not response.tool_calls:
+            try:
+                video_titles = set()
+                # 倒序遍历本轮的对话，寻找工具返回的知识库文本
+                for msg in reversed(messages):
+                    if isinstance(msg, HumanMessage):
+                        break  # 只看本轮的
+                    if getattr(msg, 'type', '') == 'tool':
+                        # 从检索内容中提取《视频名字》
+                        import re
+                        matches = re.findall(r'来源视频：《(.*?)》', str(msg.content))
+                        for m in matches:
+                            video_titles.add(m)
+                
+                if video_titles:
+                    videos = load_metadata()
+                    video_blocks = []
+                    for title in video_titles:
+                        # 在视频元数据中寻找匹配的视频
+                        matched_video = next((v for v in videos if v.get("title") == title), None)
+                        if matched_video:
+                            # 剔除不需要的过大字段（如果有的话），转为 JSON
+                            video_info = {
+                                "id": matched_video.get("id"),
+                                "title": matched_video.get("title"),
+                                "url": matched_video.get("url"),
+                                "thumbnail": matched_video.get("thumbnail"),
+                                "duration": matched_video.get("duration")
+                            }
+                            video_json = json.dumps(video_info, ensure_ascii=False)
+                            # 生成前端专属的解析标签
+                            video_blocks.append(f"<video_preview>{video_json}</video_preview>")
+                    
+                    if video_blocks:
+                        # 把标签无缝拼接到大模型原回答的末尾
+                        appendix = "\n\n---\n**🎬 参考操作演示视频：**\n" + "\n".join(video_blocks)
+                        response.content = str(response.content) + appendix
+
+            except Exception as e:
+                print(f"⚠️ [增强失败] 视频链接注入出错: {e}")
+        # ==========================================================
         print("✅ [Agent 动作] 大模型思考完成")
         return {"messages": [response]}
         
@@ -504,11 +532,29 @@ async def call_model(state: AgentState):
 
 # 定义边：判断是否结束
 def should_continue(state: AgentState):
-    last_message = state["messages"][-1]
+    messages = state["messages"]
+    last_message = messages[-1]
+    
+    # 终极防死循环：统计本轮连读调用工具的总次数
+    tool_call_count = 0
+    for i in range(len(messages) - 1, -1, -1):
+        msg = messages[i]
+        if isinstance(msg, HumanMessage):
+            break
+        if getattr(msg, 'type', '') == 'tool':
+            tool_call_count += 1
+            
+    # 如果系统失控，单轮工具交互超过 5 次，直接拔网线结束图流转
+    if tool_call_count >= 5:
+        print("🛑 [终极防线] 检测到工具循环超限(5次)，强制拔网线，跳出大模型推理循环！")
+        return "__end__"
+
+    # 正常跳转逻辑
     if last_message.tool_calls:
         return "tools"
+        
     return "__end__"
-
+    
 # --- 构建图 ---
 workflow = StateGraph(AgentState)
 

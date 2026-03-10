@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import {
     Send, Plus, MessageSquare, User, Bot, Loader2, StopCircle,
-    Mic, ArrowLeft, GraduationCap, Trash2, Wrench, AlertTriangle, Paperclip, X
+    Mic, ArrowLeft, GraduationCap, Trash2, Wrench, AlertTriangle, Paperclip, X, Play, Video
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { API_BASE_URL } from "./config";
@@ -10,6 +10,80 @@ import remarkGfm from 'remark-gfm';
 
 const API_URL = `${API_BASE_URL}/chat`;
 const VOICE_API_URL = `${API_BASE_URL}/voice`;
+
+function ChatMiniVideoCard({ video, onPlay }) {
+    return (
+        <div
+            onClick={onPlay}
+            className="mt-3 w-64 bg-white border border-blue-100 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer group"
+        >
+            <div className="relative aspect-video bg-slate-100">
+                {video.thumbnail ? (
+                    <img src={video.thumbnail} alt={video.title} className="w-full h-full object-cover" />
+                ) : (
+                    <div className="flex items-center justify-center w-full h-full">
+                        <Video className="text-gray-300" size={32} />
+                    </div>
+                )}
+                {/* 悬停播放遮罩 */}
+                <div className="absolute inset-0 bg-black/10 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                    <div className="w-12 h-12 bg-white/90 rounded-full flex items-center justify-center text-blue-600 shadow-lg group-hover:scale-110 transition-transform">
+                        <Play size={24} className="ml-1" fill="currentColor" />
+                    </div>
+                </div>
+            </div>
+            <div className="p-3">
+                <p className="text-sm font-semibold text-gray-800 truncate">{video.title}</p>
+                <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                    <Play size={12} /> 点击播放
+                </p>
+            </div>
+        </div>
+    );
+}
+// 🎬 视频播放模态框组件
+const VideoPlayerModal = ({ video, onClose }) => {
+    if (!video) return null;
+
+    return (
+        <div
+            className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 transition-opacity"
+            onClick={onClose} // 点击黑色背景时关闭
+        >
+            <div
+                className="relative w-full max-w-4xl bg-black rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+                onClick={(e) => e.stopPropagation()} // 防止点击视频本身时触发关闭
+            >
+                {/* 顶部悬浮栏：标题 + 关闭按钮 */}
+                <div className="absolute top-0 left-0 right-0 z-10 flex justify-between items-center p-4 bg-gradient-to-b from-black/80 to-transparent">
+                    <h3 className="text-white font-medium text-sm md:text-base truncate pr-8">
+                        {video.title || '视频演示'}
+                    </h3>
+                    <button
+                        onClick={onClose}
+                        className="text-white/80 hover:text-white bg-black/40 hover:bg-black/60 rounded-full p-1.5 transition-all"
+                        title="关闭"
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+
+                {/* 核心视频播放器 */}
+                <video
+                    src={video.url}
+                    controls
+                    autoPlay
+                    className="w-full h-auto max-h-[85vh] outline-none"
+                    poster={video.thumbnail}
+                >
+                    您的浏览器不支持 HTML5 视频播放。
+                </video>
+            </div>
+        </div>
+    );
+};
 // 接收 onBack 属性用于返回主页
 export default function TrainingAssistant({ onBack, userId }) {
     const [threads, setThreads] = useState([]);
@@ -33,7 +107,104 @@ export default function TrainingAssistant({ onBack, userId }) {
     const abortControllerRef = useRef(null);
     // 存储临时文件解析后的内容
     const [attachedFiles, setAttachedFiles] = useState([]);
+    const [playingVideo, setPlayingVideo] = useState(null);
 
+    // 内容解析器
+    const renderMessageContent = (text, role) => {
+        if (!text) return null;
+
+        // 匹配包含换行符的视频标签
+        const parts = text.split(/(<video_preview>[\s\S]*?<\/video_preview>)/g);
+
+        return parts.map((part, index) => {
+            // --- 1. 完整视频卡片 ---
+            if (part.trim().startsWith('<video_preview>')) {
+                const jsonStr = part.replace('<video_preview>', '').replace('</video_preview>', '');
+                try {
+                    const videoObj = JSON.parse(jsonStr);
+
+                    // 修复路径
+                    if (videoObj.url && videoObj.url.startsWith('/')) {
+                        videoObj.url = `${API_BASE_URL}${videoObj.url}`;
+                    }
+                    if (videoObj.thumbnail && videoObj.thumbnail.startsWith('/')) {
+                        videoObj.thumbnail = `${API_BASE_URL}${videoObj.thumbnail}`;
+                    }
+
+                    return (
+                        <div key={`video-${index}`} className="my-4">
+                            <ChatMiniVideoCard
+                                video={videoObj}
+                                onPlay={() => setPlayingVideo(videoObj)}
+                            />
+                        </div>
+                    );
+                } catch (e) {
+                    console.error("解析视频数据失败:", e);
+                    return <div key={`err-${index}`} className="text-red-500 text-xs border border-red-200 p-2 rounded">视频解析失败: {jsonStr}</div>;
+                }
+            }
+
+            // --- 2. 视频流式加载中 ---
+            if (part.includes('<video_preview>') && !part.includes('</video_preview>')) {
+                return (
+                    <span key={`loading-${index}`} className="inline-flex items-center text-blue-500 text-xs animate-pulse ml-2">
+                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        正在生成视频组件...
+                    </span>
+                );
+            }
+
+            // --- 3. Markdown 普通文本 ---
+            if (!part) return null;
+
+            return (
+                <ReactMarkdown
+                    key={`md-${index}`}
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                        img: ({ node, ...props }) => {
+                            let imgSrc = props.src;
+                            if (imgSrc) {
+                                // 🛠️ 修复 8080 端口拒绝连接：正则匹配任意 localhost 端口并替换
+                                imgSrc = imgSrc.replace(/http:\/\/localhost:\d+/g, API_BASE_URL);
+                                if (imgSrc.startsWith('/images')) {
+                                    imgSrc = `${API_BASE_URL}${imgSrc}`;
+                                }
+                            }
+                            return <img {...props} src={imgSrc} className="max-w-full h-auto rounded-lg shadow-md my-4 border border-gray-200 cursor-zoom-in hover:shadow-lg transition-shadow" onClick={() => window.open(imgSrc, '_blank')} />
+                        },
+                        code({ node, className, children, ...props }) {
+                            // 🛠️ 修复 DOM 嵌套报错：摒弃 inline，改用 className 匹配 language-xxx 来判断是不是代码块
+                            const match = /language-(\w+)/.exec(className || '');
+                            return match ? (
+                                <div className="bg-gray-800 text-gray-100 p-2 rounded-md my-2 overflow-x-auto">
+                                    <code className={className} {...props}>{children}</code>
+                                </div>
+                            ) : (
+                                <code className={`${role === 'user' ? 'bg-blue-700' : 'bg-gray-100 text-red-500'} px-1 rounded`} {...props}>
+                                    {children}
+                                </code>
+                            );
+                        },
+                        table: ({ node, ...props }) => <div className="overflow-x-auto my-2 rounded-lg border border-gray-200"><table className="min-w-full divide-y divide-gray-200 text-sm" {...props} /></div>,
+                        thead: ({ node, ...props }) => <thead className="bg-blue-50" {...props} />,
+                        tbody: ({ node, ...props }) => <tbody className="bg-white divide-y divide-gray-200" {...props} />,
+                        tr: ({ node, ...props }) => <tr className="hover:bg-gray-50 transition-colors" {...props} />,
+                        th: ({ node, ...props }) => <th className="px-4 py-3 text-left text-xs font-medium text-blue-800 uppercase tracking-wider font-bold" {...props} />,
+                        td: ({ node, ...props }) => <td className="px-4 py-2 whitespace-nowrap text-gray-700" {...props} />,
+                        p: ({ node, ...props }) => <p className="mb-2 last:mb-0" {...props} />,
+                        a: ({ node, ...props }) => <a className="text-blue-600 hover:underline" target="_blank" {...props} />,
+                        ul: ({ node, ...props }) => <ul className="list-disc list-inside mb-2" {...props} />,
+                        ol: ({ node, ...props }) => <ol className="list-decimal list-inside mb-2" {...props} />,
+                        li: ({ node, ...props }) => <li className="mb-1" {...props} />,
+                    }}
+                >
+                    {part}
+                </ReactMarkdown>
+            );
+        });
+    };
     // -----------------------------------------------------------------------
     // 1. 获取历史会话列表的函数
     // -----------------------------------------------------------------------
@@ -727,73 +898,7 @@ export default function TrainingAssistant({ onBack, userId }) {
                                             ) : (
                                                 /* 添加一个 div 包裹 ReactMarkdown，并将 className 放在这里 */
                                                 <div className={`prose prose-sm max-w-none ${msg.role === 'user' ? 'prose-invert' : ''}`}>
-                                                    <ReactMarkdown
-                                                        remarkPlugins={[remarkGfm]}
-                                                        components={{
-                                                            img: ({ node, ...props }) => {
-                                                                // --- 🛠️ 图片地址修复逻辑 ---
-                                                                let imgSrc = props.src;
-                                                                if (imgSrc) {
-                                                                    if (imgSrc.includes('localhost:8000')) {
-                                                                        imgSrc = imgSrc.replace('http://localhost:8000', API_BASE_URL);
-                                                                    } else if (imgSrc.startsWith('/images')) {
-                                                                        imgSrc = `${API_BASE_URL}${imgSrc}`;
-                                                                    }
-                                                                }
-                                                                // --- 🛠️ 逻辑结束 ---
-
-                                                                return (
-                                                                    <img
-                                                                        {...props}
-                                                                        src={imgSrc}
-                                                                        className="max-w-full h-auto rounded-lg shadow-md my-4 border border-gray-200 cursor-zoom-in hover:shadow-lg transition-shadow"
-                                                                        onClick={() => window.open(imgSrc, '_blank')}
-                                                                    />
-                                                                );
-                                                            },
-                                                            // 修复：代码块样式优化，避免溢出
-                                                            code({ node, inline, className, children, ...props }) {
-                                                                return !inline ? (
-                                                                    <div className="bg-gray-800 text-gray-100 p-2 rounded-md my-2 overflow-x-auto">
-                                                                        <code {...props}>{children}</code>
-                                                                    </div>
-                                                                ) : (
-                                                                    <code className={`${msg.role === 'user' ? 'bg-blue-700' : 'bg-gray-100 text-red-500'} px-1 rounded`} {...props}>
-                                                                        {children}
-                                                                    </code>
-                                                                )
-                                                            },
-                                                            // --- 自定义表格样式 ---
-                                                            table: ({ node, ...props }) => (
-                                                                <div className="overflow-x-auto my-2 rounded-lg border border-gray-200">
-                                                                    <table className="min-w-full divide-y divide-gray-200 text-sm" {...props} />
-                                                                </div>
-                                                            ),
-                                                            thead: ({ node, ...props }) => (
-                                                                <thead className="bg-blue-50" {...props} /> // 表头用淡蓝色背景
-                                                            ),
-                                                            tbody: ({ node, ...props }) => (
-                                                                <tbody className="bg-white divide-y divide-gray-200" {...props} />
-                                                            ),
-                                                            tr: ({ node, ...props }) => (
-                                                                <tr className="hover:bg-gray-50 transition-colors" {...props} />
-                                                            ),
-                                                            th: ({ node, ...props }) => (
-                                                                <th className="px-4 py-3 text-left text-xs font-medium text-blue-800 uppercase tracking-wider font-bold" {...props} />
-                                                            ),
-                                                            td: ({ node, ...props }) => (
-                                                                <td className="px-4 py-2 whitespace-nowrap text-gray-700" {...props} />
-                                                            ),
-                                                            // --- 优化其他元素样式 ---
-                                                            p: ({ node, ...props }) => <p className="mb-2 last:mb-0" {...props} />,
-                                                            a: ({ node, ...props }) => <a className="text-blue-600 hover:underline" target="_blank" {...props} />,
-                                                            ul: ({ node, ...props }) => <ul className="list-disc list-inside mb-2" {...props} />,
-                                                            ol: ({ node, ...props }) => <ol className="list-decimal list-inside mb-2" {...props} />,
-                                                            li: ({ node, ...props }) => <li className="mb-1" {...props} />,
-                                                        }}
-                                                    >
-                                                        {contentToShow}
-                                                    </ReactMarkdown>
+                                                    {renderMessageContent(contentToShow || msg.content, msg.role)}
                                                 </div>
                                             )}
                                         </div>
@@ -925,6 +1030,12 @@ export default function TrainingAssistant({ onBack, userId }) {
                     </div>
                 </div>
             </div>
+            {playingVideo && (
+                <VideoPlayerModal
+                    video={playingVideo}
+                    onClose={() => setPlayingVideo(null)}
+                />
+            )}
         </div >
     );
 }

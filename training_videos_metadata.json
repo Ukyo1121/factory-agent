@@ -1,13 +1,25 @@
 [
   {
-    "id": "6ec8497d-0d45-4ea4-ba5b-89df881b4cda",
+    "id": "5a77bdc5-33ec-4d06-8d82-16e773fe8c88",
     "title": "智能分拣助手功能演示",
     "description": null,
-    "filename": "6ec8497d-0d45-4ea4-ba5b-89df881b4cda.mp4",
-    "url": "/videos/6ec8497d-0d45-4ea4-ba5b-89df881b4cda.mp4",
-    "thumbnail": "/thumbnails/6ec8497d-0d45-4ea4-ba5b-89df881b4cda.jpg",
+    "filename": "5a77bdc5-33ec-4d06-8d82-16e773fe8c88.mp4",
+    "url": "/videos/5a77bdc5-33ec-4d06-8d82-16e773fe8c88.mp4",
+    "thumbnail": "/thumbnails/5a77bdc5-33ec-4d06-8d82-16e773fe8c88.jpg",
     "size": 24418162,
     "duration": 140.068,
-    "uploadedAt": "2026-02-03T10:27:03.832610"
+    "uploadedAt": "2026-03-09T15:29:15.884419",
+    "is_extracted": true
+  },
+  {
+    "id": "5cf86067-9a23-4bcf-9485-598a53cd4c76",
+    "title": "智能分拣助手功能演示1",
+    "description": null,
+    "filename": "5cf86067-9a23-4bcf-9485-598a53cd4c76.mp4",
+    "url": "/videos/5cf86067-9a23-4bcf-9485-598a53cd4c76.mp4",
+    "thumbnail": "/thumbnails/5cf86067-9a23-4bcf-9485-598a53cd4c76.jpg",
+    "size": 24418162,
+    "duration": 140.068,
+    "uploadedAt": "2026-03-09T19:20:05.508383"
   }
 ]

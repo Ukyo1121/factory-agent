@@ -231,3 +231,13 @@ def update_video_metadata(video_id: str, title: Optional[str] = None, descriptio
     
     save_metadata(videos)
     return True
+
+def mark_video_extracted(video_id: str) -> bool:
+    """标记视频已经被提取过知识"""
+    videos = load_metadata()
+    for v in videos:
+        if v.get("id") == video_id:
+            v["is_extracted"] = True
+            save_metadata(videos)
+            return True
+    return False

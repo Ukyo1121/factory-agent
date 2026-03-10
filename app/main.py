@@ -6,7 +6,7 @@ import uuid
 from typing import Optional
 import pandas as pd
 import io
-from fastapi import FastAPI, UploadFile, File, HTTPException, Form
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form,BackgroundTasks
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -20,8 +20,10 @@ from app.models import ChatRequest
 from app.core.kb_manager import list_files_in_es, delete_file_from_es, ingest_file, ingest_from_local_path, UPLOAD_DIR, IMAGES_DIR,parse_pdf_with_layout
 from app.core.agent import chat_stream, pool, UNANSWERED_FILE
 from app.core import video_manager
+from app.core.video_manager import load_metadata,mark_video_extracted
 from app.core.image_repo import ImageRepository
 from app.core.history_manager import init_database, db_login_user, db_get_user_threads, db_create_thread, db_update_thread_timestamp, db_update_thread_title,db_delete_thread,get_history
+from app.core.video_analyzer import extract_knowledge_from_video
 import logging
 from pathlib import Path
 
@@ -32,6 +34,7 @@ logger = logging.getLogger(__name__)
 IMAGES_DIR = Path("./factory_images")
 COLLECT_IMAGES_DIR = Path("./collect_images")
 FILES_DIR = Path("./factory_files") 
+VIDEOS_DIR = Path("./training_videos")
 if not os.path.exists(FILES_DIR):
     os.makedirs(FILES_DIR)
     
@@ -477,6 +480,29 @@ async def update_training_video_metadata(
     except Exception as e:
         print(f"更新视频信息失败: {e}")
         raise HTTPException(status_code=500, detail=f"更新失败: {str(e)}")
+
+@app.post("/training-videos/{video_id}/extract")
+async def extract_video_knowledge(video_id: str, background_tasks: BackgroundTasks):
+    videos = load_metadata()
+    video_info = next((v for v in videos if v["id"] == video_id), None)
+    
+    if not video_info:
+        raise HTTPException(status_code=404, detail="视频未找到")
+        
+    video_path = os.path.join(VIDEOS_DIR, video_info["filename"])
+    if not os.path.exists(video_path):
+        raise HTTPException(status_code=404, detail="视频文件不存在")
+
+    # 定义后台任务函数
+    async def process_task():
+        success = await extract_knowledge_from_video(video_path, video_info.get("title", "未命名操作视频"))
+        if success:
+            mark_video_extracted(video_id)
+
+    # 视频处理极其耗时，放入后台执行，立即给前端返回响应
+    background_tasks.add_task(process_task)
+    
+    return {"status": "success", "message": "视频分析任务已提交后台处理"}
 
 @app.get("/history/{thread_id}")
 async def fetch_history(thread_id: str):
