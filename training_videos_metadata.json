@@ -1,25 +1,38 @@
 [
   {
-    "id": "5a77bdc5-33ec-4d06-8d82-16e773fe8c88",
-    "title": "智能分拣助手功能演示",
+    "id": "fd93e8db-2151-487d-8fa9-462338634f94",
+    "title": "筑视智能分拣系统",
     "description": null,
-    "filename": "5a77bdc5-33ec-4d06-8d82-16e773fe8c88.mp4",
-    "url": "/videos/5a77bdc5-33ec-4d06-8d82-16e773fe8c88.mp4",
-    "thumbnail": "/thumbnails/5a77bdc5-33ec-4d06-8d82-16e773fe8c88.jpg",
-    "size": 24418162,
-    "duration": 140.068,
-    "uploadedAt": "2026-03-09T15:29:15.884419",
+    "filename": "fd93e8db-2151-487d-8fa9-462338634f94.mp4",
+    "url": "/videos/fd93e8db-2151-487d-8fa9-462338634f94.mp4",
+    "thumbnail": "/thumbnails/fd93e8db-2151-487d-8fa9-462338634f94.jpg",
+    "size": 118730751,
+    "duration": 102.377,
+    "uploadedAt": "2026-03-11T11:47:11.144952",
     "is_extracted": true
   },
   {
-    "id": "5cf86067-9a23-4bcf-9485-598a53cd4c76",
-    "title": "智能分拣助手功能演示1",
+    "id": "8d65bc35-11df-466d-b37c-3059686b7f85",
+    "title": "筑视智能焊接系统",
     "description": null,
-    "filename": "5cf86067-9a23-4bcf-9485-598a53cd4c76.mp4",
-    "url": "/videos/5cf86067-9a23-4bcf-9485-598a53cd4c76.mp4",
-    "thumbnail": "/thumbnails/5cf86067-9a23-4bcf-9485-598a53cd4c76.jpg",
-    "size": 24418162,
-    "duration": 140.068,
-    "uploadedAt": "2026-03-09T19:20:05.508383"
+    "filename": "8d65bc35-11df-466d-b37c-3059686b7f85.mp4",
+    "url": "/videos/8d65bc35-11df-466d-b37c-3059686b7f85.mp4",
+    "thumbnail": "/thumbnails/8d65bc35-11df-466d-b37c-3059686b7f85.jpg",
+    "size": 52152710,
+    "duration": 45.256,
+    "uploadedAt": "2026-03-12T19:52:24.558068",
+    "is_extracted": true
+  },
+  {
+    "id": "0a97034e-b546-4a59-b1af-a284b421a429",
+    "title": "筑视智能检测系统",
+    "description": null,
+    "filename": "0a97034e-b546-4a59-b1af-a284b421a429.mp4",
+    "url": "/videos/0a97034e-b546-4a59-b1af-a284b421a429.mp4",
+    "thumbnail": "/thumbnails/0a97034e-b546-4a59-b1af-a284b421a429.jpg",
+    "size": 21370508,
+    "duration": 134.828,
+    "uploadedAt": "2026-03-12T19:53:32.655688",
+    "is_extracted": true
   }
 ]

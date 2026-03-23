@@ -15,7 +15,7 @@ function ChatMiniVideoCard({ video, onPlay }) {
     return (
         <div
             onClick={onPlay}
-            className="mt-3 w-64 bg-white border border-blue-100 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer group"
+            className="mt-3 w-102 bg-white border border-blue-100 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer group"
         >
             <div className="relative aspect-video bg-slate-100">
                 {video.thumbnail ? (
