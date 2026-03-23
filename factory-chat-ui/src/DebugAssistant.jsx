@@ -113,6 +113,43 @@ export default function DebugAssistant({ onBack, userId }) {
     const renderMessageContent = (text, role) => {
         if (!text) return null;
 
+        const markdownComponents = {
+            img: ({ node, ...props }) => {
+                let imgSrc = props.src;
+                if (imgSrc) {
+                    // 🛠️ 修复 8080 端口拒绝连接：正则匹配任意 localhost 端口并替换
+                    imgSrc = imgSrc.replace(/http:\/\/localhost:\d+/g, API_BASE_URL);
+                    if (imgSrc.startsWith('/images')) {
+                        imgSrc = `${API_BASE_URL}${imgSrc}`;
+                    }
+                }
+                return <img {...props} src={imgSrc} className="max-w-full h-auto rounded-lg shadow-md my-4 border border-gray-200 cursor-zoom-in hover:shadow-lg transition-shadow" onClick={() => window.open(imgSrc, '_blank')} />
+            },
+            code({ node, className, children, ...props }) {
+                // 🛠️ 修复 DOM 嵌套报错：摒弃 inline，改用 className 匹配 language-xxx 来判断是不是代码块
+                const match = /language-(\w+)/.exec(className || '');
+                return match ? (
+                    <div className="bg-gray-800 text-gray-100 p-2 rounded-md my-2 overflow-x-auto">
+                        <code className={className} {...props}>{children}</code>
+                    </div>
+                ) : (
+                    <code className={`${role === 'user' ? 'bg-blue-700' : 'bg-gray-100 text-red-500'} px-1 rounded`} {...props}>
+                        {children}
+                    </code>
+                );
+            },
+            table: ({ node, ...props }) => <div className="overflow-x-auto my-2 rounded-lg border border-gray-200"><table className="min-w-full divide-y divide-gray-200 text-sm" {...props} /></div>,
+            thead: ({ node, ...props }) => <thead className="bg-blue-50" {...props} />,
+            tbody: ({ node, ...props }) => <tbody className="bg-white divide-y divide-gray-200" {...props} />,
+            tr: ({ node, ...props }) => <tr className="hover:bg-gray-50 transition-colors" {...props} />,
+            th: ({ node, ...props }) => <th className="px-4 py-3 text-left text-xs font-medium text-blue-800 uppercase tracking-wider font-bold" {...props} />,
+            td: ({ node, ...props }) => <td className="px-4 py-2 whitespace-nowrap text-gray-700" {...props} />,
+            p: ({ node, ...props }) => <p className="mb-2 last:mb-0" {...props} />,
+            a: ({ node, ...props }) => <a className="text-blue-600 hover:underline" target="_blank" {...props} />,
+            ul: ({ node, ...props }) => <ul className="list-disc list-inside mb-2" {...props} />,
+            ol: ({ node, ...props }) => <ol className="list-decimal list-inside mb-2" {...props} />,
+            li: ({ node, ...props }) => <li className="mb-1" {...props} />,
+        };
         // 匹配包含换行符的视频标签
         const parts = text.split(/(<video_preview>[\s\S]*?<\/video_preview>)/g);
 
@@ -147,11 +184,18 @@ export default function DebugAssistant({ onBack, userId }) {
 
             // --- 2. 视频流式加载中 ---
             if (part.includes('<video_preview>') && !part.includes('</video_preview>')) {
+                const textBeforeVideo = part.slice(0, part.indexOf('<video_preview>'));
                 return (
-                    <span key={`loading-${index}`} className="inline-flex items-center text-blue-500 text-xs animate-pulse ml-2">
-                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                        正在生成视频组件...
-                    </span>
+                    <React.Fragment key={`partial-${index}`}>
+                        {textBeforeVideo && (
+                            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                                {textBeforeVideo}
+                            </ReactMarkdown>
+                        )}
+                        <span className="inline-flex items-center gap-1.5 text-xs px-3 py-1 rounded-full text-violet-400 bg-violet-900/20 border border-violet-700/30 mt-2">
+                            <Loader2 size={12} className="animate-spin" /> 正在加载视频组件...
+                        </span>
+                    </React.Fragment>
                 );
             }
 
@@ -162,43 +206,7 @@ export default function DebugAssistant({ onBack, userId }) {
                 <ReactMarkdown
                     key={`md-${index}`}
                     remarkPlugins={[remarkGfm]}
-                    components={{
-                        img: ({ node, ...props }) => {
-                            let imgSrc = props.src;
-                            if (imgSrc) {
-                                // 🛠️ 修复 8080 端口拒绝连接：正则匹配任意 localhost 端口并替换
-                                imgSrc = imgSrc.replace(/http:\/\/localhost:\d+/g, API_BASE_URL);
-                                if (imgSrc.startsWith('/images')) {
-                                    imgSrc = `${API_BASE_URL}${imgSrc}`;
-                                }
-                            }
-                            return <img {...props} src={imgSrc} className="max-w-full h-auto rounded-lg shadow-md my-4 border border-gray-200 cursor-zoom-in hover:shadow-lg transition-shadow" onClick={() => window.open(imgSrc, '_blank')} />
-                        },
-                        code({ node, className, children, ...props }) {
-                            // 🛠️ 修复 DOM 嵌套报错：摒弃 inline，改用 className 匹配 language-xxx 来判断是不是代码块
-                            const match = /language-(\w+)/.exec(className || '');
-                            return match ? (
-                                <div className="bg-gray-800 text-gray-100 p-2 rounded-md my-2 overflow-x-auto">
-                                    <code className={className} {...props}>{children}</code>
-                                </div>
-                            ) : (
-                                <code className={`${role === 'user' ? 'bg-blue-700' : 'bg-gray-100 text-red-500'} px-1 rounded`} {...props}>
-                                    {children}
-                                </code>
-                            );
-                        },
-                        table: ({ node, ...props }) => <div className="overflow-x-auto my-2 rounded-lg border border-gray-200"><table className="min-w-full divide-y divide-gray-200 text-sm" {...props} /></div>,
-                        thead: ({ node, ...props }) => <thead className="bg-blue-50" {...props} />,
-                        tbody: ({ node, ...props }) => <tbody className="bg-white divide-y divide-gray-200" {...props} />,
-                        tr: ({ node, ...props }) => <tr className="hover:bg-gray-50 transition-colors" {...props} />,
-                        th: ({ node, ...props }) => <th className="px-4 py-3 text-left text-xs font-medium text-blue-800 uppercase tracking-wider font-bold" {...props} />,
-                        td: ({ node, ...props }) => <td className="px-4 py-2 whitespace-nowrap text-gray-700" {...props} />,
-                        p: ({ node, ...props }) => <p className="mb-2 last:mb-0" {...props} />,
-                        a: ({ node, ...props }) => <a className="text-blue-600 hover:underline" target="_blank" {...props} />,
-                        ul: ({ node, ...props }) => <ul className="list-disc list-inside mb-2" {...props} />,
-                        ol: ({ node, ...props }) => <ol className="list-decimal list-inside mb-2" {...props} />,
-                        li: ({ node, ...props }) => <li className="mb-1" {...props} />,
-                    }}
+                    components={markdownComponents}
                 >
                     {part}
                 </ReactMarkdown>

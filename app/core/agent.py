@@ -12,6 +12,7 @@ import json
 import datetime
 import base64
 import uuid
+import copy
 
 warnings.filterwarnings("ignore")
 
@@ -403,6 +404,14 @@ async def call_model(state: AgentState):
     else:
         messages[0] = system_prompt
 
+    messages_clean = copy.deepcopy(list(messages))
+    for i, msg in enumerate(messages_clean):
+        if hasattr(msg, 'content') and isinstance(msg.content, str):
+            if '<video_preview>' in msg.content or '🎬' in msg.content:
+                cleaned = re.sub(r'<video_preview>[\s\S]*?</video_preview>', '', msg.content)
+                cleaned = re.sub(r'\n*---\n\*\*🎬 参考操作演示视频：\*\*\n?', '', cleaned).strip()
+                messages_clean[i].content = cleaned
+
     # 3. 执行中间件：处理图片 Base64
     messages_with_images = convert_to_multimodal_messages(messages)
     
@@ -484,26 +493,36 @@ async def call_model(state: AgentState):
         # 当模型没有调用工具，说明这是发给用户的最终回答
         if not response.tool_calls:
             try:
-                video_titles = set()
-                # 倒序遍历本轮的对话，寻找工具返回的知识库文本
-                for msg in reversed(messages):
-                    if isinstance(msg, HumanMessage):
-                        break  # 只看本轮的
-                    if getattr(msg, 'type', '') == 'tool':
-                        # 从检索内容中提取《视频名字》
-                        import re
-                        matches = re.findall(r'来源视频：《(.*?)》', str(msg.content))
-                        for m in matches:
-                            video_titles.add(m)
+                # ✅ 第一步：彻底清理所有残留的视频块（不管格式）
+                clean_content = re.sub(r'<video_preview>[\s\S]*?</video_preview>', '', str(response.content))
+                clean_content = re.sub(r'\n*---\n\*\*🎬 参考操作演示视频：\*\*\n?', '', clean_content)
+                clean_content = clean_content.strip()
+                response.content = clean_content
                 
+                print(f"==== 🎬 [视频注入] 清理后内容末尾: {clean_content[-100:]} ====")
+
+                # 第二步：从本轮Tool消息提取视频标题
+                video_titles = set()
+                last_human_idx = -1
+                for i, msg in enumerate(messages):
+                    if isinstance(msg, HumanMessage):
+                        last_human_idx = i
+
+                if last_human_idx >= 0:
+                    for msg in messages[last_human_idx:]:  # 只看本轮
+                        if getattr(msg, 'type', '') == 'tool' or msg.__class__.__name__ == 'ToolMessage':
+                            matches = re.findall(r'来源视频：《(.*?)》', str(msg.content))
+                            for m in matches:
+                                video_titles.add(m)
+
+                print(f"==== 🎬 [视频注入] 提取到视频标题: {video_titles} ====")
+
                 if video_titles:
                     videos = load_metadata()
                     video_blocks = []
                     for title in video_titles:
-                        # 在视频元数据中寻找匹配的视频
                         matched_video = next((v for v in videos if v.get("title") == title), None)
                         if matched_video:
-                            # 剔除不需要的过大字段（如果有的话），转为 JSON
                             video_info = {
                                 "id": matched_video.get("id"),
                                 "title": matched_video.get("title"),
@@ -512,17 +531,19 @@ async def call_model(state: AgentState):
                                 "duration": matched_video.get("duration")
                             }
                             video_json = json.dumps(video_info, ensure_ascii=False)
-                            # 生成前端专属的解析标签
                             video_blocks.append(f"<video_preview>{video_json}</video_preview>")
-                    
+                            print(f"==== 🎬 [视频注入] ✅ 匹配到视频: {title} ====")
+                        else:
+                            print(f"==== 🎬 [视频注入] ❌ 找不到: {title} ====")
+
                     if video_blocks:
-                        # 把标签无缝拼接到大模型原回答的末尾
                         appendix = "\n\n---\n**🎬 参考操作演示视频：**\n" + "\n".join(video_blocks)
-                        response.content = str(response.content) + appendix
+                        response.content = clean_content + appendix
 
             except Exception as e:
                 print(f"⚠️ [增强失败] 视频链接注入出错: {e}")
-        # ==========================================================
+                import traceback
+                traceback.print_exc()
         print("✅ [Agent 动作] 大模型思考完成")
         return {"messages": [response]}
         
@@ -733,6 +754,18 @@ async def chat_stream(message: str, thread_id: str, temp_context: dict = None):
                         has_yielded = True
                         yield last_msg.content
 
+        # 循环结束后，检查最终状态里是否有视频链接，补发给前端
+        final_state = await graph.aget_state(config)
+        if final_state and final_state.values.get("messages"):
+            last_msg = final_state.values["messages"][-1]
+            last_content = str(last_msg.content) if isinstance(last_msg, AIMessage) else ""
+
+            # 追加视频块
+            if "<video_preview>" in last_content:
+                video_start = last_content.find("<video_preview>")
+                video_part = last_content[video_start:]
+                print(f"🎬 [Chat] 循环结束后追加视频块")
+                yield video_part
     except Exception as e:
         error_msg = f"\n\n❌ 对话处理失败: {str(e)}\n"
         print(f"❌ [Chat] {error_msg}")

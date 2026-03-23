@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, Fragment } from 'react';
 import {
     Send, Plus, MessageSquare, User, Bot, Loader2, StopCircle,
     Mic, ArrowLeft, GraduationCap, Trash2, Wrench, AlertTriangle, Paperclip, X, Play, Video
@@ -113,13 +113,53 @@ export default function TrainingAssistant({ onBack, userId }) {
     const renderMessageContent = (text, role) => {
         if (!text) return null;
 
+        const markdownComponents = {
+            img: ({ node, ...props }) => {
+                let imgSrc = props.src;
+                if (imgSrc) {
+                    // 🛠️ 修复 8080 端口拒绝连接：正则匹配任意 localhost 端口并替换
+                    imgSrc = imgSrc.replace(/http:\/\/localhost:\d+/g, API_BASE_URL);
+                    if (imgSrc.startsWith('/images')) {
+                        imgSrc = `${API_BASE_URL}${imgSrc}`;
+                    }
+                }
+                return <img {...props} src={imgSrc} className="max-w-full h-auto rounded-lg shadow-md my-4 border border-gray-200 cursor-zoom-in hover:shadow-lg transition-shadow" onClick={() => window.open(imgSrc, '_blank')} />
+            },
+            code({ node, className, children, ...props }) {
+                // 🛠️ 修复 DOM 嵌套报错：摒弃 inline，改用 className 匹配 language-xxx 来判断是不是代码块
+                const match = /language-(\w+)/.exec(className || '');
+                return match ? (
+                    <div className="bg-gray-800 text-gray-100 p-2 rounded-md my-2 overflow-x-auto">
+                        <code className={className} {...props}>{children}</code>
+                    </div>
+                ) : (
+                    <code className={`${role === 'user' ? 'bg-blue-700' : 'bg-gray-100 text-red-500'} px-1 rounded`} {...props}>
+                        {children}
+                    </code>
+                );
+            },
+            table: ({ node, ...props }) => <div className="overflow-x-auto my-2 rounded-lg border border-gray-200"><table className="min-w-full divide-y divide-gray-200 text-sm" {...props} /></div>,
+            thead: ({ node, ...props }) => <thead className="bg-blue-50" {...props} />,
+            tbody: ({ node, ...props }) => <tbody className="bg-white divide-y divide-gray-200" {...props} />,
+            tr: ({ node, ...props }) => <tr className="hover:bg-gray-50 transition-colors" {...props} />,
+            th: ({ node, ...props }) => <th className="px-4 py-3 text-left text-xs font-medium text-blue-800 uppercase tracking-wider font-bold" {...props} />,
+            td: ({ node, ...props }) => <td className="px-4 py-2 whitespace-nowrap text-gray-700" {...props} />,
+            p: ({ node, ...props }) => <p className="mb-2 last:mb-0" {...props} />,
+            a: ({ node, ...props }) => <a className="text-blue-600 hover:underline" target="_blank" {...props} />,
+            ul: ({ node, ...props }) => <ul className="list-disc list-inside mb-2" {...props} />,
+            ol: ({ node, ...props }) => <ol className="list-decimal list-inside mb-2" {...props} />,
+            li: ({ node, ...props }) => <li className="mb-1" {...props} />,
+        };
         // 匹配包含换行符的视频标签
         const parts = text.split(/(<video_preview>[\s\S]*?<\/video_preview>)/g);
 
         return parts.map((part, index) => {
             // --- 1. 完整视频卡片 ---
             if (part.trim().startsWith('<video_preview>')) {
-                const jsonStr = part.replace('<video_preview>', '').replace('</video_preview>', '');
+                if (!part.includes('</video_preview>')) {
+                    return null;
+                }
+                const jsonStr = part.replace('<video_preview>', '').replace('</video_preview>', '').trim();
                 try {
                     const videoObj = JSON.parse(jsonStr);
 
@@ -147,11 +187,18 @@ export default function TrainingAssistant({ onBack, userId }) {
 
             // --- 2. 视频流式加载中 ---
             if (part.includes('<video_preview>') && !part.includes('</video_preview>')) {
+                const textBeforeVideo = part.slice(0, part.indexOf('<video_preview>'));
                 return (
-                    <span key={`loading-${index}`} className="inline-flex items-center text-blue-500 text-xs animate-pulse ml-2">
-                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                        正在生成视频组件...
-                    </span>
+                    <Fragment key={`partial-${index}`}>
+                        {textBeforeVideo && (
+                            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                                {textBeforeVideo}
+                            </ReactMarkdown>
+                        )}
+                        <span className="inline-flex items-center gap-1.5 text-xs px-3 py-1 rounded-full text-violet-400 bg-violet-900/20 border border-violet-700/30 mt-2">
+                            <Loader2 size={12} className="animate-spin" /> 正在加载视频组件...
+                        </span>
+                    </Fragment>
                 );
             }
 
@@ -162,43 +209,7 @@ export default function TrainingAssistant({ onBack, userId }) {
                 <ReactMarkdown
                     key={`md-${index}`}
                     remarkPlugins={[remarkGfm]}
-                    components={{
-                        img: ({ node, ...props }) => {
-                            let imgSrc = props.src;
-                            if (imgSrc) {
-                                // 🛠️ 修复 8080 端口拒绝连接：正则匹配任意 localhost 端口并替换
-                                imgSrc = imgSrc.replace(/http:\/\/localhost:\d+/g, API_BASE_URL);
-                                if (imgSrc.startsWith('/images')) {
-                                    imgSrc = `${API_BASE_URL}${imgSrc}`;
-                                }
-                            }
-                            return <img {...props} src={imgSrc} className="max-w-full h-auto rounded-lg shadow-md my-4 border border-gray-200 cursor-zoom-in hover:shadow-lg transition-shadow" onClick={() => window.open(imgSrc, '_blank')} />
-                        },
-                        code({ node, className, children, ...props }) {
-                            // 🛠️ 修复 DOM 嵌套报错：摒弃 inline，改用 className 匹配 language-xxx 来判断是不是代码块
-                            const match = /language-(\w+)/.exec(className || '');
-                            return match ? (
-                                <div className="bg-gray-800 text-gray-100 p-2 rounded-md my-2 overflow-x-auto">
-                                    <code className={className} {...props}>{children}</code>
-                                </div>
-                            ) : (
-                                <code className={`${role === 'user' ? 'bg-blue-700' : 'bg-gray-100 text-red-500'} px-1 rounded`} {...props}>
-                                    {children}
-                                </code>
-                            );
-                        },
-                        table: ({ node, ...props }) => <div className="overflow-x-auto my-2 rounded-lg border border-gray-200"><table className="min-w-full divide-y divide-gray-200 text-sm" {...props} /></div>,
-                        thead: ({ node, ...props }) => <thead className="bg-blue-50" {...props} />,
-                        tbody: ({ node, ...props }) => <tbody className="bg-white divide-y divide-gray-200" {...props} />,
-                        tr: ({ node, ...props }) => <tr className="hover:bg-gray-50 transition-colors" {...props} />,
-                        th: ({ node, ...props }) => <th className="px-4 py-3 text-left text-xs font-medium text-blue-800 uppercase tracking-wider font-bold" {...props} />,
-                        td: ({ node, ...props }) => <td className="px-4 py-2 whitespace-nowrap text-gray-700" {...props} />,
-                        p: ({ node, ...props }) => <p className="mb-2 last:mb-0" {...props} />,
-                        a: ({ node, ...props }) => <a className="text-blue-600 hover:underline" target="_blank" {...props} />,
-                        ul: ({ node, ...props }) => <ul className="list-disc list-inside mb-2" {...props} />,
-                        ol: ({ node, ...props }) => <ol className="list-decimal list-inside mb-2" {...props} />,
-                        li: ({ node, ...props }) => <li className="mb-1" {...props} />,
-                    }}
+                    components={markdownComponents}
                 >
                     {part}
                 </ReactMarkdown>
@@ -256,15 +267,6 @@ export default function TrainingAssistant({ onBack, userId }) {
             return () => clearTimeout(timer);
         } else {
             setIsTyping(false);
-            if (!isLoading && streamBuffer) {
-                setMessages(prev => {
-                    const newMsgs = [...prev];
-                    if (newMsgs.length > 0 && newMsgs[newMsgs.length - 1].role === 'ai') {
-                        newMsgs[newMsgs.length - 1].content = streamBuffer;
-                    }
-                    return newMsgs;
-                });
-            }
         }
     }, [streamBuffer, displayedContent, isLoading]);
 
@@ -538,7 +540,7 @@ export default function TrainingAssistant({ onBack, userId }) {
                     query: textToSend,
                     thread_id: activeThreadId,
                     user_id: userId,
-                    temp_context: finalTempContext  // 使用新的 temp_context
+                    temp_context: finalTempContext
                 }),
                 signal: abortControllerRef.current.signal
             });
@@ -546,17 +548,29 @@ export default function TrainingAssistant({ onBack, userId }) {
             if (!response.ok) throw new Error("API Error");
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
+            let fullContent = "";  // ✅ 用局部变量累积完整内容
 
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
                 const chunk = decoder.decode(value, { stream: true });
-                setStreamBuffer(prev => prev + chunk);
+                fullContent += chunk;
+                setStreamBuffer(fullContent);  // ✅ 每次都传完整内容，不是增量
             }
+
+            // ✅ 流结束后，把包含视频块的完整内容写回 messages
+            setMessages(prev => {
+                const newMsgs = [...prev];
+                if (newMsgs.length > 0 && newMsgs[newMsgs.length - 1].role === 'ai') {
+                    newMsgs[newMsgs.length - 1].content = fullContent;
+                }
+                return newMsgs;
+            });
+            setStreamBuffer(fullContent);
 
         } catch (error) {
             if (error.name !== 'AbortError') {
-                setStreamBuffer(prev => prev + "\n\n⚠️ 连接服务器失败,请检查后端。");
+                setStreamBuffer(prev => prev + "\n\n⚠️ 连接服务器失败，请检查后端。");
             }
         } finally {
             setIsLoading(false);
@@ -745,10 +759,20 @@ export default function TrainingAssistant({ onBack, userId }) {
                             const isThinking = isLastAiMessage && isLoading && !displayedContent;
 
                             // 决定显示的内容
-                            const contentToShow = isLastAiMessage && (isLoading || isTyping) ? displayedContent : msg.content;
+                            const contentToShow = (() => {
+                                // 正在流式输出中：用 displayedContent（可能不完整，过滤视频防止解析崩溃）
+                                if (isLastAiMessage && (isLoading || isTyping)) {
+                                    return displayedContent
+                                        .replace(/<video_preview>[\s\S]*?<\/video_preview>/g, '')
+                                        .replace(/\n*---\n\*\*🎬 参考操作演示视频：\*\*\n?/g, '')
+                                        .trim();
+                                }
+                                // 流结束 或 历史消息：完整显示，包含视频
+                                return msg.content || '';
+                            })();
 
                             return (
-                                <div key={idx} className={`flex gap-4 mb-6 w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                <div key={idx} className={`flex gap-4 mb-6 w-full min-w-0 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
 
                                     {/* 1. 左侧：AI 头像 (只有 AI 消息才显示在左边) */}
                                     {msg.role === 'ai' && (
@@ -760,7 +784,7 @@ export default function TrainingAssistant({ onBack, userId }) {
                                     {/* 2. 中间核心区：垂直排列 (文件在上，气泡在下) */}
                                     {/* max-w-[85%] 移到这里，控制整体宽度 */}
                                     {/* items-end 让用户的文件和气泡都靠右，items-start 让 AI 的都靠左 */}
-                                    <div className={`flex flex-col gap-2 max-w-[85%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                                    <div className={`flex flex-col gap-2 max-w-[85%] min-w-0 ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
                                         {/* 2.1 文件列表 */}
                                         {msg.files && msg.files.length > 0 && (
                                             <div className={`flex flex-wrap gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -882,9 +906,9 @@ export default function TrainingAssistant({ onBack, userId }) {
                                         )}
 
                                         {/* 2.2 消息气泡 (放在文件下方) */}
-                                        <div className={`p-4 rounded-2xl text-sm leading-7 shadow-sm transition-all duration-300 w-fit ${msg.role === 'user'
-                                            ? 'bg-blue-600 text-white rounded-tr-sm' // 用户：右上角直角
-                                            : 'bg-white border border-gray-100 text-gray-800 rounded-tl-sm' // AI：左上角直角
+                                        <div className={`p-4 rounded-2xl text-sm leading-7 shadow-sm transition-all duration-300 overflow-hidden ${msg.role === 'user'
+                                            ? 'w-fit bg-blue-600 text-white rounded-tr-sm'
+                                            : 'w-full bg-white border border-gray-100 text-gray-800 rounded-tl-sm'
                                             }`}>
                                             {/* --- 核心内容显示逻辑 --- */}
                                             {isThinking ? (
