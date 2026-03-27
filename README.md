@@ -323,25 +323,6 @@ systemctl --user status factory_agent
 systemctl --user status factory-chat-ui
 ```
 
-### 5.8 Docker Compose（可选）
-
-项目也提供了 `docker-compose.yml` 用于一键启动所有服务：
-
-```bash
-docker compose up -d
-```
-
-包含的服务：
-
-| 服务 | 容器名 | 端口 | 说明 |
-|------|--------|------|------|
-| elasticsearch | factory_es | 9200 | 向量数据库 |
-| kibana | factory_kibana | 5601 | ES 管理面板 |
-| backend | factory_backend | 8000 | FastAPI 后端 |
-| frontend | factory_frontend | 80 | Nginx 前端 |
-
----
-
 ## 6. 默认账号
 
 | 字段 | 值 |

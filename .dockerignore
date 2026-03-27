@@ -1,0 +1,14 @@
+logtest/
+training_videos/
+training_thumbnails/
+collect_images/
+factory_docs/
+factory_images/
+factory_files/
+models/
+Log_Analysis_Ui/
+__pycache__/
+*.pyc
+.git/
+node_modules/
+.env
