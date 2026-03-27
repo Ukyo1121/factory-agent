@@ -30,10 +30,51 @@
 
 **AI 模型：**
 
-- **本地 LLM：** qwen2.5-vl-7b-instruct/qwen2.5-vl-72b-instruct（通过 vLLM 部署，OpenAI 兼容接口 `localhost:8080`）
+- **本地 LLM：** Qwen2.5-VL-7B-Instruct/Qwen2-VL-72B-Instruct-AWQ (INT4 量化版)（通过 vLLM 部署，OpenAI 兼容接口 `localhost:8080`）
 - **云端 LLM：** Qwen3-VL-Plus（通过 DashScope API，用于视频分析）
 - **Embedding：** `BAAI/bge-m3`（HuggingFace 本地模型）
 - **Reranker：** `BAAI/bge-reranker-base`（Top-15，fp16）
+
+### 补充：模型选型评估与运行配置
+
+**一、 Qwen2.5-VL-7B 模型效果欠佳**
+* **参数预算与多模态能力的博弈：** 7B 级别模型的参数总量受限，作为视觉语言（VL）模型，其训练重心高度倾斜于图像与视频解析。这导致其用于复杂逻辑推理和严格格式输出（如 Function Calling 的 JSON 规范）的表征能力被严重挤压，面对高难度 Agent 任务易退化为普通对话模式。
+* **长上下文注意力衰减（长 Prompt 理解受限）：** 现有的 Agent 框架（如 LangChain）会在底层封装大量详尽的工具说明与系统指令。7B 模型在处理此类超长且高密度的 System Prompt 时，指令遵循度会显著下降（出现“注意力涣散”），容易忽略后台的工具调用约束而进行自由发挥。
+
+**二、 Qwen2.5-VL-72B 大模型当前运行瓶颈**
+* **算力不足：** 72B 模型的庞大参数量对推理引擎（vLLM）提出了极高要求。当前显卡的空闲显存远低于该规模模型权重加载与 KV Cache 初始化所需的最低物理显存阈值，系统无法分配足够的连续内存块，直接导致进程启动失败。
+
+**三、模型部署与业务层调用规范**
+
+若后续开发中需要使用本地部署的大模型，需要进行以下配置
+
+**1. 后端模型推理服务启动命令（以 7B 为例）**
+*(注：若后续部署 72B 模型，需额外增加分布式多卡并行参数)*
+```bash
+CUDA_VISIBLE_DEVICES=0 vllm serve ./models/Qwen2.5-VL-7B-Instruct \
+  --served-model-name qwen2.5-vl-7b-instruct \
+  --host 0.0.0.0 --port 8080 \
+  --max-model-len 16384 \
+  --gpu-memory-utilization 0.9 \
+  --trust-remote-code \
+  --limit-mm-per-prompt '{"image": 10, "video": 1}' \
+  --enable-auto-tool-choice \
+  --tool-call-parser hermes
+```
+
+**2. 业务层 Agent 引擎实例配置 (`修改agent.py中构建Agent的llm部分的代码`)**
+```python
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(
+    model="qwen2.5-vl-7b-instruct",               # 必须和刚才启动命令里的 served-model-name 一致
+    openai_api_key="EMPTY",                       # 本地调用不需要真实的 Key
+    openai_api_base="http://127.0.0.1:8080/v1",   # 指向你本地刚刚启动的 8080 端口
+    temperature=0.1,
+    max_tokens=2048,
+    model_kwargs={"stream": True} 
+)
+```
 
 ### 前端
 
