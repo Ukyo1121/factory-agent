@@ -1,10 +1,10 @@
-# 智能分拣助手 (Factory Agent)
+# 智能分拣助手
 
 ## 项目简介
 
 智能分拣助手是一个面向工业分拣场景的 AI 智能平台，集成了 RAG 知识检索、多模态对话、生产日志分析、培训视频知识提取、图片采集等核心功能。系统基于 LangGraph Agent 架构构建，支持 SSE 流式响应，前端采用 React + Tailwind CSS 构建现代化交互界面。
 
-项目路径：/data/suzhiling/factory-agent
+项目地址：172.24.26.11 /data/suzhiling/factory-agent
 
 ---
 
