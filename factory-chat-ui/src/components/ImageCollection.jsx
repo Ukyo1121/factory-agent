@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-    Upload, Type, Image as ImageIcon, Save, RefreshCw, ArrowLeft, Trash2
+    Upload, Type, Image as ImageIcon, Save, RefreshCw, ArrowLeft, Trash2, Download
 } from 'lucide-react';
 import { API_BASE_URL } from '../config';
 
@@ -68,6 +68,27 @@ const ImageCollection = ({ onBack }) => {
         }
     };
 
+    const handleExport = async () => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/collect/export`);
+            if (response.ok) {
+                const data = await response.json();
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `collected_images_${new Date().toISOString().slice(0, 10)}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            } else {
+                alert("导出失败");
+            }
+        } catch (error) {
+            console.error("Export failed:", error);
+            alert("导出过程中发生错误");
+        }
+    };
+
     const handleUpload = async () => {
         if (!selectedFile || !annotation.trim()) {
             alert("请选择图片并填写标注内容");
@@ -125,13 +146,22 @@ const ImageCollection = ({ onBack }) => {
                     </h1>
                 </div>
 
-                <button
-                    onClick={fetchCollectedImages}
-                    className="p-2 text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-full transition-colors"
-                    title="刷新列表"
-                >
-                    <RefreshCw size={20} />
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={handleExport}
+                        className="p-2 text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-full transition-colors"
+                        title="导出 JSON"
+                    >
+                        <Download size={20} />
+                    </button>
+                    <button
+                        onClick={fetchCollectedImages}
+                        className="p-2 text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-full transition-colors"
+                        title="刷新列表"
+                    >
+                        <RefreshCw size={20} />
+                    </button>
+                </div>
             </header>
 
             <div className="flex flex-1 gap-4 overflow-hidden">

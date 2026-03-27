@@ -1,352 +1,432 @@
 // src/components/LifecycleDashboard.jsx
-import React, { useMemo, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-    PieChart, Pie, Cell, ScatterChart, Scatter, ZAxis, AreaChart, Area
+    PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, Legend
 } from 'recharts';
 import {
-    Activity, Clock, MapPin, Package, Layers, Search,
-    UploadCloud, ArrowLeft, Timer, MousePointer2, AlertTriangle, FileText, X
+    Calendar, Settings, Activity, Clock, Target, Download, RefreshCw, X, ArrowLeft
 } from 'lucide-react';
 import { API_BASE_URL } from "../config";
 
-// 炫彩配色
-const COLORS = ['#6366f1', '#ec4899', '#8b5cf6', '#14b8a6', '#f59e0b', '#3b82f6'];
-
 const LifecycleDashboard = ({ isOpen, onClose }) => {
-    const [data, setData] = useState(null);
+    const [datesList, setDatesList] = useState([]);
+    const [selectedDate, setSelectedDate] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const [error, setError] = useState(null);
-    const [searchTerm, setSearchTerm] = useState('');
+    const [statusMsg, setStatusMsg] = useState('等待连接 API...');
 
-    // --- 上传文件 ---
-    const handleFileUpload = async (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
+    const [uiData, setUiData] = useState({
+        error: [], warning: [], normal: [], ignore: [],
+        pies: { primary: [], secondary: [], truss: [], pallet: [], total: [] },
+        kpi: { total: 0, exceptions: 0 }
+    });
 
+    const [config, setConfig] = useState({ log_root: '', nesting_root: '' });
+    const [showConfig, setShowConfig] = useState(false);
+
+    const [selectedPart, setSelectedPart] = useState(null);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+
+    const [pieModalConfig, setPieModalConfig] = useState({ isOpen: false, title: '', parts: [] });
+
+    useEffect(() => {
+        if (isOpen) {
+            fetchConfig();
+            fetchDates();
+        }
+    }, [isOpen]);
+
+    const fetchConfig = async () => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/log_config`);
+            const data = await res.json();
+            setConfig(data);
+        } catch (e) { console.error("API 未连接"); }
+    };
+
+    const fetchDates = async () => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/log_dates`);
+            const data = await res.json();
+            setDatesList(data);
+            if (data.length > 0) {
+                setSelectedDate(data[0]);
+            } else {
+                setStatusMsg("后端已连接！请点击左下角配置路径。");
+            }
+        } catch (e) { setStatusMsg("无法连接到后端服务"); }
+    };
+
+    const saveConfig = async () => {
+        try {
+            await fetch(`${API_BASE_URL}/api/log_config`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(config)
+            });
+            setShowConfig(false);
+            fetchDates();
+        } catch (e) { alert("保存配置失败，请确保后端已启动。"); }
+    };
+
+    const fetchDailyData = async (dateStr, forceRefresh = false) => {
+        if (!dateStr) return;
         setIsLoading(true);
-        setError(null);
-        const formData = new FormData();
-        formData.append('file', file);
+        setStatusMsg(forceRefresh ? `强制重新解析 ${dateStr} 日志...` : `正在获取 ${dateStr} 数据...`);
 
         try {
-            // 注意：确保端口号与后端一致
-            const response = await fetch(`${API_BASE_URL}/api/upload_lifecycle`, {
-                method: 'POST',
-                body: formData,
-            });
-
-            const result = await response.json();
-            if (result.data) {
-                setData(result.data);
-            } else {
-                setError(result.error || "文件解析失败，请检查格式");
-            }
-        } catch (err) {
-            setError("上传失败，请检查后端服务是否启动");
+            const response = await fetch(`${API_BASE_URL}/api/log_analyze?date_folder=${dateStr}&refresh=${forceRefresh}`);
+            if (!response.ok) throw new Error(await response.text());
+            const data = await response.json();
+            setUiData(data);
+            setStatusMsg(`${dateStr} 数据已就绪，共处理 ${data.kpi.total} 件`);
+        } catch (error) {
+            console.error(error);
+            setStatusMsg(`分析失败: ${error.message}`);
         } finally {
             setIsLoading(false);
         }
     };
 
-    // 如果未打开，不渲染
-    if (!isOpen) return null;
+    useEffect(() => {
+        if (selectedDate) fetchDailyData(selectedDate, false);
+    }, [selectedDate]);
 
-    // --- 界面 A: 上传文件 ---
-    if (!data) {
-        return (
-            <div className="fixed inset-0 z-50 bg-slate-100 flex flex-col animate-in fade-in duration-200">
-                {/* 顶部栏 */}
-                <div className="bg-white p-4 shadow-sm flex justify-between items-center">
-                    <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                        <Activity className="text-blue-600" /> 零件生命周期可视化面板
-                    </h1>
-                    <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
-                        <X size={24} className="text-slate-500" />
-                    </button>
-                </div>
+    const handleExport = async () => {
+        if (!selectedDate) return;
+        setIsLoading(true);
+        setStatusMsg("正在由后端打包带图 Excel，请稍候...");
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/log_export?date_folder=${selectedDate}`);
+            if (!response.ok) throw new Error("导出失败");
 
-                {/* 上传区域 */}
-                <div className="flex-1 flex flex-col items-center justify-center p-8">
-                    <div className="bg-white p-12 rounded-3xl shadow-xl text-center max-w-2xl w-full border border-slate-200">
-                        <div className="mb-6 inline-block p-4 bg-blue-50 rounded-full">
-                            <UploadCloud size={64} className="text-blue-500" />
-                        </div>
-                        <h2 className="text-2xl font-bold text-slate-800 mb-2">上传生产流转数据</h2>
-                        {/* 修改提示文本 */}
-                        <p className="text-slate-500 mb-8">请上传包含唯一编号、工位、坐标和耗时信息的表格文件</p>
-                        <label className={`flex flex-col items-center justify-center w-full h-48 border-2 border-dashed rounded-xl cursor-pointer transition-all ${isLoading ? 'bg-slate-50 border-slate-300' : 'bg-blue-50/50 border-blue-300 hover:border-blue-500 hover:bg-blue-50'}`}>
-                            {isLoading ? (
-                                <div className="flex flex-col items-center">
-                                    <div className="animate-spin rounded-full h-10 w-10 border-4 border-blue-200 border-t-blue-600 mb-4"></div>
-                                    <span className="text-slate-500 font-medium">正在分析数据...</span>
-                                </div>
-                            ) : (
-                                <div className="flex flex-col items-center">
-                                    <span className="text-blue-600 font-bold text-lg mb-2">点击选择文件</span>
-                                    {/* 修改支持格式提示 */}
-                                    <span className="text-slate-400 text-sm">支持 .xlsx / .csv 格式</span>
-                                </div>
-                            )}
-                            {/* 修改 accept 属性，增加 .xlsx 和 .xls */}
-                            <input type="file" accept=".csv, .xlsx, .xls" className="hidden" onChange={handleFileUpload} disabled={isLoading} />
-                        </label>
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `产线数字孪生报表_${selectedDate}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
 
-                        {error && (
-                            <div className="mt-6 p-4 bg-red-50 text-red-600 rounded-lg flex items-center justify-center gap-2 border border-red-100">
-                                <AlertTriangle size={18} /> {error}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    // --- 数据计算 ---
-    // --- 1. 数据完整度计算逻辑 ---
-    const calculateIntegrity = () => {
-        if (!data || data.length === 0) return 0;
-
-        let totalCells = 0;
-        let filledCells = 0;
-
-        data.forEach(row => {
-            Object.values(row).forEach(val => {
-                totalCells++;
-                // 判断有效值：不是 null, undefined, 且不是空字符串
-                // 注意：数字 0 是有效数据，不能被排除
-                if (val !== null && val !== undefined && val !== "") {
-                    filledCells++;
-                }
-            });
-        });
-
-        return totalCells === 0 ? 0 : ((filledCells / totalCells) * 100).toFixed(1);
+            setStatusMsg("Excel 报表已成功下载！");
+        } catch (error) {
+            setStatusMsg("报表下载失败，请检查后端运行状态。");
+        } finally {
+            setIsLoading(false);
+        }
     };
 
-    const dataIntegrity = calculateIntegrity();
-    const totalTasks = data.length;
-    // 计算总耗时(需处理可能的非数字字符)
-    const avgTime = (data.reduce((sum, item) => sum + (Number(item['总耗时(分钟)']) || 0), 0) / totalTasks).toFixed(1);
-    const stationsCount = new Set(data.map(i => i['最新工位 (Station)'])).size;
+    const handlePieClick = (stepKey, stepTitle, entryData) => {
+        const statusName = entryData.name || entryData.payload?.name;
+        const allParts = [...uiData.error, ...uiData.warning, ...uiData.normal, ...uiData.ignore];
+        const filtered = allParts.filter(p => p.steps && p.steps[stepKey] === statusName);
 
-    // 图表数据1: 工位排行
-    const stationData = Object.entries(data.reduce((acc, item) => {
-        const s = item['最新工位 (Station)'] || '未知';
-        acc[s] = (acc[s] || 0) + 1;
-        return acc;
-    }, {})).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 10);
+        setPieModalConfig({
+            isOpen: true,
+            title: `${stepTitle} - ${statusName} (${filtered.length}件)`,
+            parts: filtered
+        });
+    };
 
-    // 图表数据2: 类型占比
-    const typeData = Object.entries(data.reduce((acc, item) => {
-        const t = item['零件类型 (Type)'] || '其他';
-        acc[t] = (acc[t] || 0) + 1;
-        return acc;
-    }, {})).map(([name, value]) => ({ name, value }));
+    const COLORS = { '正常': '#22c55e', '警戒': '#f59e0b', '异常': '#ef4444' };
 
-    // 图表数据3: 车间地图
-    const mapData = data.map(item => ({
-        x: Number(item['坐标 X']) || 0,
-        y: Number(item['坐标 Y']) || 0,
-        z: Number(item['总耗时(分钟)']) || 10,
-        name: item['唯一编号 (Unique ID)'],
-        station: item['最新工位 (Station)']
-    }));
-
-    // 表格过滤
-    const filteredData = data.filter(item =>
-        JSON.stringify(item).toLowerCase().includes(searchTerm.toLowerCase())
+    const renderPartItem = (item, colorClass) => (
+        <div
+            key={item.uid}
+            onClick={() => { setSelectedPart(item); setIsModalOpen(true); }}
+            className="cursor-pointer flex justify-between items-center p-3 mb-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors shadow-sm"
+        >
+            <div className="flex-1">
+                <div className={`font-bold text-sm ${colorClass}`}>{item.part_no}</div>
+                <div className="text-xs text-slate-400 font-mono mt-1">UID: {item.uid}</div>
+                <div className="text-xs text-slate-500 mt-1 flex items-center">
+                    <Clock size={12} className="mr-1" /> {item.duration}m | {item.status}
+                </div>
+            </div>
+            <div className="w-20 h-20 bg-slate-50 rounded-lg flex items-center justify-center border border-slate-100 ml-2 overflow-hidden shrink-0">
+                {item.img_url ? (
+                    <img src={`${API_BASE_URL}${item.img_url}`} alt="CAD" className="max-w-full max-h-full object-contain" />
+                ) : (
+                    <span className="text-[10px] text-slate-300">无图形</span>
+                )}
+            </div>
+        </div>
     );
 
-    // --- 界面 B: 数据看板 ---
+    const renderPie = (data, title, stepKey, isLarge = false) => (
+        <div className="flex flex-col items-center justify-center w-full h-full min-h-[160px] bg-white rounded-lg border border-slate-200 p-3 relative shadow-sm">
+            <h4 className={`font-bold mb-1 absolute top-3 left-4 ${isLarge ? 'text-sm text-blue-600' : 'text-[10px] text-slate-400'}`}>
+                {title}
+            </h4>
+            {data && data.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                        <Pie
+                            data={data}
+                            innerRadius={isLarge ? "55%" : "50%"}
+                            outerRadius={isLarge ? "80%" : "75%"}
+                            paddingAngle={2} dataKey="value"
+                            onClick={(entry) => handlePieClick(stepKey, title, entry)}
+                            className="cursor-pointer"
+                        >
+                            {data.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={COLORS[entry.name]} stroke="rgba(0,0,0,0)" style={{ outline: 'none' }} />
+                            ))}
+                        </Pie>
+                        <RechartsTooltip />
+                        <Legend verticalAlign="bottom" height={isLarge ? 30 : 20} iconType="circle" wrapperStyle={{ fontSize: isLarge ? '12px' : '10px' }} />
+                    </PieChart>
+                </ResponsiveContainer>
+            ) : (
+                <div className="text-xs text-slate-300 font-mono flex-1 flex items-center justify-center">无数据</div>
+            )}
+        </div>
+    );
+
+    if (!isOpen) return null;
+
     return (
-        <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 duration-300">
-            {/* 顶部导航 */}
-            <div className="bg-white px-6 py-4 shadow-sm border-b border-slate-200 flex justify-between items-center shrink-0">
-                <div className="flex items-center gap-4">
-                    <button onClick={() => setData(null)} className="p-2 hover:bg-slate-100 rounded-full text-slate-500" title="返回上传">
-                        <ArrowLeft size={24} />
+        <div className="fixed inset-0 z-50 flex flex-col bg-slate-50 text-slate-800 overflow-hidden font-sans animate-in fade-in duration-200">
+
+            {/* 顶部导航栏 */}
+            <header className="py-3 px-6 flex items-center justify-between border-b border-slate-200 bg-white shrink-0 shadow-sm">
+                <div className="flex items-center flex-1">
+                    <button onClick={onClose} className="p-2 mr-3 hover:bg-slate-100 rounded-full text-slate-500" title="返回首页">
+                        <ArrowLeft size={20} />
                     </button>
-                    <div>
-                        <h1 className="text-xl font-bold text-slate-800">生产监测看板</h1>
-                        <div className="flex items-center gap-2 text-xs text-slate-500">
-                            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                            系统在线 · 共 {totalTasks} 条数据
+                    <div className="flex flex-col justify-center">
+                        <div className="text-lg font-bold text-slate-800">生产监测看板</div>
+                        <div className="flex items-center mt-0.5">
+                            <div className="w-2 h-2 bg-blue-500 mr-2 rounded-full"></div>
+                            <p className="text-xs text-slate-500 font-mono flex items-center">
+                                {statusMsg}
+                                {isLoading && <div className="ml-2 w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>}
+                            </p>
                         </div>
                     </div>
                 </div>
-                <button onClick={onClose} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg font-medium transition-colors">
-                    退出面板
-                </button>
-            </div>
 
-            {/* 滚动内容区 */}
-            <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
-                <div className="max-w-7xl mx-auto space-y-6">
+                <div className="flex items-center gap-3 shrink-0">
+                    <button
+                        onClick={() => fetchDailyData(selectedDate, true)}
+                        disabled={!selectedDate || isLoading}
+                        className={`flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all border
+                            ${(!selectedDate || isLoading)
+                                ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                                : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'}`}
+                    >
+                        <RefreshCw size={14} className="mr-2" />
+                        获取最新实况
+                    </button>
 
-                    {/* KPI 指标 */}
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                        <KPICard title="总任务数" value={totalTasks} unit="个" icon={<Package size={24} />} color="blue" />
-                        <KPICard title="平均耗时" value={avgTime} unit="min" icon={<Clock size={24} />} color="indigo" />
-                        <KPICard title="活跃工位" value={stationsCount} unit="个" icon={<MapPin size={24} />} color="emerald" />
-                        <KPICard title="数据完整度" value={dataIntegrity} unit="%" icon={<FileText size={24} />} color="violet" />
-                    </div>
-                    {/* 图表第一行 */}
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        {/* 散点图 (2/3) */}
-                        <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-                            <h3 className="font-bold text-slate-700 mb-6 flex items-center gap-2">
-                                <MousePointer2 className="text-blue-500" /> 车间物流位置热力图 (坐标 XY)
-                            </h3>
-                            <div className="h-[350px]">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-                                        <CartesianGrid strokeDasharray="3 3" />
-                                        <XAxis type="number" dataKey="x" name="X轴" unit="mm" />
-                                        <YAxis type="number" dataKey="y" name="Y轴" unit="mm" />
-                                        <ZAxis type="number" dataKey="z" range={[50, 400]} name="耗时" unit="min" />
-                                        <Tooltip cursor={{ strokeDasharray: '3 3' }} content={<CustomTooltip />} />
-                                        <Scatter name="零件" data={mapData} fill="#8884d8">
-                                            {mapData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-                                        </Scatter>
-                                    </ScatterChart>
-                                </ResponsiveContainer>
-                            </div>
-                        </div>
+                    <button
+                        onClick={handleExport}
+                        disabled={!selectedDate || isLoading}
+                        className={`flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-sm
+                            ${(!selectedDate || isLoading)
+                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                : 'bg-blue-600 hover:bg-blue-500 text-white'}`}
+                    >
+                        <Download size={14} className="mr-2" />
+                        下载报表
+                    </button>
 
-                        {/* 饼图 (1/3) */}
-                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-                            <h3 className="font-bold text-slate-700 mb-6 flex items-center gap-2">
-                                <Activity className="text-pink-500" /> 零件类型分布
-                            </h3>
-                            <div className="h-[350px]">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <PieChart>
-                                        <Pie data={typeData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
-                                            {typeData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-                                        </Pie>
-                                        <Tooltip />
-                                        <Legend layout="vertical" verticalAlign="bottom" align="center" />
-                                    </PieChart>
-                                </ResponsiveContainer>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* 图表第二行: 柱状图 */}
-                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-                        <h3 className="font-bold text-slate-700 mb-6 flex items-center gap-2">
-                            <Layers className="text-indigo-500" /> 工位任务负载 Top 10
-                        </h3>
-                        <div className="h-[300px]">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={stationData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                    <XAxis dataKey="name" />
-                                    <YAxis />
-                                    <Tooltip cursor={{ fill: '#f8fafc' }} />
-                                    <Bar dataKey="count" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={40}>
-                                        {stationData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-                                    </Bar>
-                                </BarChart>
-                            </ResponsiveContainer>
-                        </div>
-                    </div>
-
-                    {/* 数据明细表 */}
-                    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                            <h3 className="font-bold text-slate-700 flex items-center gap-2">
-                                <FileText className="text-slate-400" /> 数据明细
-                            </h3>
-                            <div className="relative w-64">
-                                <input
-                                    type="text"
-                                    placeholder="搜索唯一编号、料框号..."
-                                    className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                />
-                                <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
-                            </div>
-                        </div>
-                        <div className="overflow-x-auto max-h-[500px]">
-                            <table className="min-w-full text-sm text-left">
-                                <thead className="bg-slate-50 text-slate-500 font-medium sticky top-0 z-10">
-                                    <tr>
-                                        <th className="px-6 py-4">唯一编号</th>
-                                        <th className="px-6 py-4">零件类型</th>
-                                        <th className="px-6 py-4">料框号</th>
-                                        <th className="px-6 py-4">任务号</th>
-                                        <th className="px-6 py-4">最新工位</th>
-                                        <th className="px-6 py-4">坐标 (X, Y)</th>
-                                        <th className="px-6 py-4 text-right">总耗时(分钟)</th>
-                                        <th className="px-6 py-4 text-right">开始时间</th>
-                                        <th className="px-6 py-4 text-right">结束时间</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {filteredData.slice(0, 50).map((item, idx) => (
-                                        <tr key={idx} className="hover:bg-blue-50/30 transition-colors">
-                                            <td className="px-6 py-3 font-mono text-slate-500">{item['唯一编号 (Unique ID)']}</td>
-                                            <td className="px-6 py-3">
-                                                {/* 添加 whitespace-nowrap 防止换行 */}
-                                                <span className="bg-slate-100 px-2 py-1 rounded text-xs text-slate-600 whitespace-nowrap">
-                                                    {item['零件类型 (Type)']}
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-3 font-medium text-slate-800">{item['料框号 (Frame Code)']}</td>
-                                            <td className="px-6 py-3 font-medium text-slate-800">{item['任务号 (Task No)']}</td>
-                                            <td className="px-6 py-3 text-slate-600">{item['最新工位 (Station)']}</td>
-                                            <td className="px-6 py-3 font-mono text-xs text-slate-400">({item['坐标 X']}, {item['坐标 Y']})</td>
-                                            <td className="px-6 py-3 text-right font-bold text-blue-600">{item['总耗时(分钟)']}</td>
-                                            <td className="px-6 py-3 text-right font-bold text-blue-600">
-                                                {item['开始时间'] ? String(item['开始时间']).split('.')[0] : '-'}
-                                            </td>
-
-                                            <td className="px-6 py-3 text-right font-bold text-blue-600">
-                                                {item['结束时间'] ? String(item['结束时间']).split('.')[0] : '-'}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
+                    <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors">
+                        <X size={20} />
+                    </button>
                 </div>
+            </header>
+
+            {/* 主体工作区 */}
+            <div className="flex flex-1 overflow-hidden">
+
+                {/* 左侧边栏 */}
+                <aside className="w-64 bg-white border-r border-slate-200 flex flex-col shrink-0">
+                    <div className="flex-1 py-4 overflow-y-auto">
+                        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 px-4 flex items-center">
+                            <Calendar size={12} className="mr-2" /> 历史批次
+                        </h2>
+                        <div className="space-y-1 px-3">
+                            {datesList.length > 0 ? datesList.map(date => (
+                                <button
+                                    key={date}
+                                    onClick={() => setSelectedDate(date)}
+                                    disabled={isLoading}
+                                    className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all
+                                        ${selectedDate === date
+                                            ? 'bg-blue-50 text-blue-600 font-medium border border-blue-200'
+                                            : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700 border border-transparent'}`}
+                                >
+                                    <span className="font-mono">{date}</span>
+                                </button>
+                            )) : (
+                                <div className="text-xs text-slate-400 text-center py-4 bg-slate-50 rounded mx-2 border border-dashed border-slate-200">无批次数据</div>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="p-3 border-t border-slate-200">
+                        <button
+                            onClick={() => setShowConfig(!showConfig)}
+                            className="w-full flex items-center justify-center px-4 py-2.5 rounded-lg text-sm font-medium bg-slate-50 border border-slate-200 text-slate-600 hover:bg-slate-100 transition-colors"
+                        >
+                            <Settings size={14} className="mr-2" /> 引擎配置
+                        </button>
+                    </div>
+                </aside>
+
+                {/* 右侧主内容区 */}
+                <main className="flex-1 flex flex-col relative overflow-hidden bg-slate-50">
+                    {showConfig && (
+                        <div className="absolute top-0 left-0 w-full bg-white/95 backdrop-blur-md border-b border-slate-200 p-6 z-50 shadow-lg">
+                            <h3 className="text-base font-bold mb-4 flex items-center text-slate-700">
+                                <Settings className="mr-2 text-blue-500" /> 后端路径映射配置
+                            </h3>
+                            <div className="space-y-4 max-w-3xl">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wider">Log 根目录绝对路径</label>
+                                    <input type="text" value={config.log_root} onChange={e => setConfig({ ...config, log_root: e.target.value })}
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-sm text-slate-700 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200 transition-colors"
+                                        placeholder="例如: /data/logs" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wider">套料图物理库路径</label>
+                                    <input type="text" value={config.nesting_root} onChange={e => setConfig({ ...config, nesting_root: e.target.value })}
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-sm text-slate-700 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200 transition-colors"
+                                        placeholder="例如: /data/logs/VISUALNESTING" />
+                                </div>
+                                <div className="flex gap-3 pt-2">
+                                    <button onClick={saveConfig} className="bg-blue-600 hover:bg-blue-500 px-6 py-2 rounded-lg text-sm font-medium text-white transition-colors">保存配置</button>
+                                    <button onClick={() => setShowConfig(false)} className="bg-slate-100 hover:bg-slate-200 border border-slate-200 px-6 py-2 rounded-lg text-sm text-slate-600 transition-colors">取消</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className={`flex-1 overflow-hidden flex transition-opacity duration-300 ${isLoading ? 'opacity-30' : 'opacity-100'}`}>
+                        {/* 左：零件列表 */}
+                        <div className="w-[380px] border-r border-slate-200 flex flex-col bg-white">
+                            <div className="p-4 border-b border-slate-200">
+                                <h3 className="font-bold text-sm text-slate-700 flex items-center">
+                                    <Target size={14} className="mr-2 text-blue-500" /> 实体映射清单
+                                </h3>
+                            </div>
+                            <div className="flex-1 overflow-y-auto p-4">
+                                {uiData.error.map(item => renderPartItem(item, 'text-red-500'))}
+                                {uiData.warning.map(item => renderPartItem(item, 'text-amber-500'))}
+                                {uiData.normal.map(item => renderPartItem(item, 'text-green-500'))}
+                            </div>
+                        </div>
+
+                        {/* 右：KPI + 饼图 */}
+                        <div className="flex-1 p-6 flex flex-col bg-slate-50">
+                            <div className="grid grid-cols-2 gap-4 mb-6 shrink-0">
+                                <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+                                    <p className="text-xs text-slate-400 font-medium mb-1 uppercase tracking-wider">处理总零件数</p>
+                                    <h3 className="text-3xl font-bold text-slate-800 font-mono">{uiData.kpi.total}</h3>
+                                </div>
+                                <div className={`bg-white border rounded-xl p-5 shadow-sm ${uiData.kpi.exceptions > 0 ? 'border-red-200 bg-red-50/50' : 'border-slate-200'}`}>
+                                    <p className="text-xs text-slate-400 font-medium mb-1 uppercase tracking-wider">异常拦截数</p>
+                                    <h3 className={`text-3xl font-bold font-mono ${uiData.kpi.exceptions > 0 ? 'text-red-500' : 'text-slate-800'}`}>{uiData.kpi.exceptions}</h3>
+                                </div>
+                            </div>
+
+                            <div className="flex-1 bg-white border border-slate-200 rounded-xl p-5 flex flex-col overflow-hidden shadow-sm">
+                                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center shrink-0">
+                                    <Activity size={14} className="mr-2 text-green-500" /> 全局耗时分布矩阵
+                                </h3>
+
+                                <div className="flex-1 flex gap-4 px-2 pb-2 h-full">
+                                    <div className="w-1/3 h-full">
+                                        {renderPie(uiData.pies?.total, "总体聚合大盘", "total", true)}
+                                    </div>
+
+                                    <div className="w-2/3 grid grid-cols-2 gap-3 h-full">
+                                        {renderPie(uiData.pies?.primary, "一次分拣", "primary")}
+                                        {renderPie(uiData.pies?.secondary, "二次分拣", "secondary")}
+                                        {renderPie(uiData.pies?.truss, "桁架分拣", "truss")}
+                                        {renderPie(uiData.pies?.pallet, "码盘调度", "pallet")}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* 饼图下钻弹窗 */}
+                    {pieModalConfig.isOpen && (
+                        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/30 backdrop-blur-sm">
+                            <div className="bg-white border border-slate-200 rounded-2xl w-[600px] max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+                                <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-slate-50">
+                                    <h3 className="text-base font-bold text-slate-800 flex items-center">
+                                        <Target size={18} className="mr-2 text-blue-500" />
+                                        {pieModalConfig.title}
+                                    </h3>
+                                    <button
+                                        onClick={() => setPieModalConfig({ ...pieModalConfig, isOpen: false })}
+                                        className="p-1.5 bg-slate-100 rounded-lg text-slate-400 hover:text-white hover:bg-red-500 transition-colors"
+                                    >
+                                        <X size={18} />
+                                    </button>
+                                </div>
+                                <div className="p-4 overflow-y-auto flex-1">
+                                    {pieModalConfig.parts.length > 0 ? (
+                                        pieModalConfig.parts.map(item => {
+                                            const statusColor = item.steps?.total === '异常' ? 'text-red-500' : (item.steps?.total === '警戒' ? 'text-amber-500' : 'text-green-500');
+                                            return renderPartItem(item, statusColor);
+                                        })
+                                    ) : (
+                                        <div className="text-center text-slate-400 py-10 text-sm">暂无符合条件的零件</div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 零件详情弹窗 */}
+                    {isModalOpen && selectedPart && (
+                        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-slate-900/30 backdrop-blur-sm">
+                            <div className="bg-white border border-slate-200 rounded-2xl w-[500px] max-h-[80vh] flex flex-col shadow-2xl overflow-hidden">
+                                <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-slate-50">
+                                    <div>
+                                        <h3 className="text-base font-bold text-slate-800">{selectedPart.part_no}</h3>
+                                        <p className="text-xs text-slate-400 font-mono mt-0.5">UID: {selectedPart.uid} | 耗时: {selectedPart.duration}m</p>
+                                    </div>
+                                    <button
+                                        onClick={() => setIsModalOpen(false)}
+                                        className="p-1.5 bg-slate-100 rounded-lg text-slate-400 hover:text-white hover:bg-red-500 transition-colors"
+                                    >
+                                        <X size={18} />
+                                    </button>
+                                </div>
+                                <div className="p-4 overflow-y-auto flex-1">
+                                    {selectedPart.history && selectedPart.history.length > 0 ? (
+                                        <div className="relative border-l-2 border-slate-200 ml-3 space-y-5">
+                                            {selectedPart.history.map((log, idx) => {
+                                                const match = log.match(/\[(.*?)\] (.*)/);
+                                                const time = match ? match[1] : '';
+                                                const action = match ? match[2] : log;
+                                                const isError = action.includes('异常') || action.includes('超时');
+
+                                                return (
+                                                    <div key={idx} className="relative pl-5">
+                                                        <div className={`absolute -left-[7px] top-1 w-3 h-3 rounded-full border-2 border-white ${isError ? 'bg-red-500' : 'bg-blue-500'}`}></div>
+                                                        <div className={`text-sm font-medium ${isError ? 'text-red-500' : 'text-slate-700'}`}>{action}</div>
+                                                        <div className="text-xs text-slate-400 font-mono mt-0.5">{time}</div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    ) : (
+                                        <div className="text-center text-slate-400 py-10 text-sm">暂无流程记录数据</div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </main>
             </div>
         </div>
     );
-};
-
-// --- 子组件 ---
-const KPICard = ({ title, value, unit, icon, color }) => (
-    <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-        <div className={`p-4 rounded-xl bg-${color}-50 text-${color}-600`}>{icon}</div>
-        <div>
-            <p className="text-slate-400 text-sm font-medium">{title}</p>
-            <div className="flex items-baseline gap-1">
-                <span className="text-2xl font-bold text-slate-800">{value}</span>
-                <span className="text-xs text-slate-400">{unit}</span>
-            </div>
-        </div>
-    </div>
-);
-
-const CustomTooltip = ({ active, payload }) => {
-    if (active && payload && payload.length) {
-        const data = payload[0].payload;
-        return (
-            <div className="bg-white p-3 border border-slate-100 rounded-lg shadow-xl text-xs z-50">
-                <p className="font-bold mb-1">{data.name}</p>
-                <p className="text-slate-500">工位: {data.station}</p>
-                <p className="text-blue-600 font-bold">耗时: {data.z} min</p>
-            </div>
-        );
-    }
-    return null;
 };
 
 export default LifecycleDashboard;

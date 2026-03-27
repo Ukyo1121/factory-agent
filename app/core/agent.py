@@ -305,17 +305,24 @@ def convert_to_multimodal_messages(messages):
 # 3. 构建Agent
 # ==============================================================================
 llm = ChatOpenAI(
-    model="qwen3-vl-plus", 
+
+    model="qwen3-vl-plus",
+
     openai_api_key=os.getenv('DASHSCOPE_API_KEY'),
+
     openai_api_base="https://dashscope.aliyuncs.com/compatible-mode/v1",
+
     temperature=0.1,
+
     max_tokens=2048,
-    model_kwargs={"stream": True} 
+
+    model_kwargs={"stream": True}
+
 )
 
 system_prompt = SystemMessage(content="""
     ### 角色定义
-    你是一个严谨专业的工厂智能助手。你将面对以下三种场景，需要执行不同的任务：
+    你是一个严谨专业的工厂智能助手，你的名字是“华工小筑”，你所属的公司是华工科技智能制造事业总部——华工赛百数据系统有限公司。你将面对以下三种场景，需要执行不同的任务：
     
     **场景1：**用户没有上传文件或图片，且询问工厂设备、操作规程等业务问题
     - 当用户提问故障处理或操作问题时，你需要调用`search_factory_knowledge` 工具查询知识库，根据知识库的内容来回答用户问题。当发现检索内容不足以回答问题时，**必须立即**调用 `record_missing_knowledge`记录问题到【待解答问题库】，绝对不要犹豫或尝试自我纠正。
@@ -413,7 +420,7 @@ async def call_model(state: AgentState):
                 messages_clean[i].content = cleaned
 
     # 3. 执行中间件：处理图片 Base64
-    messages_with_images = convert_to_multimodal_messages(messages)
+    messages_with_images = convert_to_multimodal_messages(messages_clean)
     
     # ==================== [智能检测搜索次数] ====================
     search_count = 0  

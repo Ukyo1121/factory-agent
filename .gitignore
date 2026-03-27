@@ -13,6 +13,7 @@ factory_images/
 factory_docs/
 factory_files/
 collect_images/
+logtest/
 
 # 忽略本地下载的模型
 models/

@@ -7,7 +7,7 @@ from typing import Optional
 import pandas as pd
 import io
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form,BackgroundTasks
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from faster_whisper import WhisperModel
@@ -24,6 +24,7 @@ from app.core.video_manager import load_metadata,mark_video_extracted
 from app.core.image_repo import ImageRepository
 from app.core.history_manager import init_database, db_login_user, db_get_user_threads, db_create_thread, db_update_thread_timestamp, db_update_thread_title,db_delete_thread,get_history
 from app.core.video_analyzer import extract_knowledge_from_video
+from app.core.log_core import LogCore
 import logging
 from pathlib import Path
 
@@ -57,6 +58,10 @@ except Exception as e:
     voice_model = None
 # 定义生命周期管理器
 image_repo = None
+
+# 日志分析引擎
+log_engine = LogCore()
+log_memory_cache = {}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global image_repo
@@ -341,50 +346,160 @@ async def solve_question(
         raise HTTPException(status_code=500, detail=str(e))
     
 # --------------------------------------------------------------------------
-# 5. 零件生命周期数据可视化接口
+# 5. 日志分析看板接口 (原零件生命周期数据可视化)
 # --------------------------------------------------------------------------
 
-@app.post("/api/upload_lifecycle")
-async def upload_lifecycle_data(file: UploadFile = File(...)):
-    """
-    接收 CSV 或 Excel 文件，解析为 JSON 数据供前端可视化使用
-    """
-    try:
-        contents = await file.read()
-        filename = file.filename.lower()
-        
-        df = None
-        
-        # --- 分支 1: 处理 Excel (.xlsx) ---
-        if filename.endswith(".xlsx") or filename.endswith(".xls"):
-            # read_excel 需要二进制流 (BytesIO)，不需要 decode
-            df = pd.read_excel(io.BytesIO(contents))
-            
-        # --- 分支 2: 处理 CSV (.csv) ---
-        else:
-            # read_csv 需要文本流，尝试 utf-8 和 gbk 解码
-            try:
-                df = pd.read_csv(io.StringIO(contents.decode('utf-8')))
-            except UnicodeDecodeError:
-                df = pd.read_csv(io.StringIO(contents.decode('gbk')))
-        
-        # --- 通用数据清洗逻辑 ---
-        # 确保数值列是数字类型，如果为空则填0
-        numeric_cols = ['总耗时(分钟)', '坐标 X', '坐标 Y']
-        for col in numeric_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-        
-        # 填充空字符串，防止前端报错
-        df = df.fillna("")
+@app.get("/api/log_config")
+def get_log_config():
+    return {"log_root": log_engine.log_root, "nesting_root": log_engine.nesting_root}
 
-        # 将 DataFrame 转为字典列表返回
-        data = df.to_dict(orient="records")
-        return {"data": data, "count": len(data)}
-        
-    except Exception as e:
-        print(f"文件解析错误: {e}")
-        return {"error": f"解析失败: {str(e)}"}
+
+@app.post("/api/log_config")
+def update_log_config(config: dict):
+    log_engine.save_config(config.get('log_root'), config.get('nesting_root'))
+    return {"status": "success", "msg": "配置已保存，图库索引已重建"}
+
+
+@app.get("/api/log_dates")
+def get_log_dates():
+    if not log_engine.log_root or not os.path.exists(log_engine.log_root):
+        return []
+    folders = [f for f in os.listdir(log_engine.log_root)
+               if os.path.isdir(os.path.join(log_engine.log_root, f))
+               and f not in ['VISUALNESTING', 'charts', '.ui_thumbs_cache']]
+    folders.sort(reverse=True)
+    return folders
+
+
+@app.get("/api/log_thumbs/{date_folder}/{filename}")
+def get_log_thumbnail(date_folder: str, filename: str):
+    if not log_engine.log_root:
+        raise HTTPException(status_code=400, detail="Log 根目录未配置")
+    file_path = os.path.join(log_engine.log_root, date_folder, ".ui_thumbs_cache", filename)
+    if os.path.exists(file_path):
+        return FileResponse(file_path)
+    raise HTTPException(status_code=404, detail="图片未找到")
+
+
+@app.get("/api/log_analyze")
+def log_analyze(date_folder: str, refresh: bool = False):
+    if not log_engine.log_root:
+        raise HTTPException(status_code=400, detail="未配置 Log 根目录")
+
+    if not refresh and date_folder in log_memory_cache:
+        return log_memory_cache[date_folder]
+
+    folder_path = os.path.join(log_engine.log_root, date_folder)
+    df, msg = log_engine.process_folder(folder_path)
+
+    if df is None:
+        raise HTTPException(status_code=500, detail=msg)
+
+    records = df.to_dict('records')
+
+    ui_data = {
+        'error': [], 'warning': [], 'normal': [], 'ignore': [],
+        'kpi': {'total': len(records), 'exceptions': 0},
+        'pies': {}
+    }
+
+    pies_counts = {
+        'primary': {'正常': 0, '警戒': 0, '异常': 0},
+        'secondary': {'正常': 0, '警戒': 0, '异常': 0},
+        'truss': {'正常': 0, '警戒': 0, '异常': 0},
+        'pallet': {'正常': 0, '警戒': 0, '异常': 0},
+        'total': {'正常': 0, '警戒': 0, '异常': 0}
+    }
+
+    def categorize(dur, limit_normal=1.0, limit_warn=30.0):
+        if dur < 0: return None
+        if dur <= limit_normal: return '正常'
+        elif dur <= limit_warn: return '警戒'
+        else: return '异常'
+
+    for row in records:
+        uid = row.get('唯一编号 (Unique ID)', '')
+        part_no = row.get('零件号 (Part Code)', '')
+        status = row.get('状态', '')
+        duration = row.get('总耗时(分钟)', 0)
+
+        img_url = f"/api/log_thumbs/{date_folder}/{uid}.png" if row.get('UI微缩图') else None
+
+        history_raw = row.get('完整流程追踪', '')
+        history_list = history_raw.split('\n') if history_raw else []
+
+        cat_pri = categorize(row.get('一次分拣耗时', -1.0))
+        cat_sec = categorize(row.get('二次分拣耗时', -1.0))
+        cat_truss = categorize(row.get('桁架分拣耗时', -1.0), limit_normal=15.0, limit_warn=40.0)
+        cat_pal = categorize(row.get('码盘调度耗时', -1.0))
+
+        total_cat = '正常'
+        if '\U0001f534' in status: total_cat = '异常'
+        elif '\U0001f7e1' in status: total_cat = '警戒'
+
+        item = {
+            'uid': uid, 'part_no': part_no, 'status': status, 'duration': duration,
+            'img_url': img_url, 'history': history_list,
+            'steps': {
+                'primary': cat_pri,
+                'secondary': cat_sec,
+                'truss': cat_truss,
+                'pallet': cat_pal,
+                'total': total_cat
+            }
+        }
+
+        if cat_pri: pies_counts['primary'][cat_pri] += 1
+        if cat_sec: pies_counts['secondary'][cat_sec] += 1
+        if cat_truss: pies_counts['truss'][cat_truss] += 1
+        if cat_pal: pies_counts['pallet'][cat_pal] += 1
+        pies_counts['total'][total_cat] += 1
+
+        if '\U0001f534' in status:
+            ui_data['error'].append(item)
+            ui_data['kpi']['exceptions'] += 1
+        elif '\U0001f7e1' in status:
+            ui_data['warning'].append(item)
+        elif '\U0001f7e2' in status:
+            ui_data['normal'].append(item)
+        else:
+            ui_data['ignore'].append(item)
+
+    def format_pie(d): return [{'name': k, 'value': v} for k, v in d.items() if v > 0]
+
+    ui_data['pies'] = {
+        'primary': format_pie(pies_counts['primary']),
+        'secondary': format_pie(pies_counts['secondary']),
+        'truss': format_pie(pies_counts['truss']),
+        'pallet': format_pie(pies_counts['pallet']),
+        'total': format_pie(pies_counts['total'])
+    }
+
+    log_memory_cache[date_folder] = ui_data
+    return ui_data
+
+
+@app.get("/api/log_export")
+def log_export(date_folder: str):
+    if not log_engine.log_root:
+        raise HTTPException(status_code=400, detail="未配置 Log 根目录")
+
+    folder_path = os.path.join(log_engine.log_root, date_folder)
+    df, msg = log_engine.process_folder(folder_path)
+
+    if df is None:
+        raise HTTPException(status_code=500, detail=msg)
+
+    export_path = os.path.join(folder_path, f"Report_{date_folder}.xlsx")
+    success = log_engine.export_excel_with_images(df, export_path)
+
+    if success and os.path.exists(export_path):
+        return FileResponse(
+            path=export_path,
+            filename=f"产线数字孪生报表_{date_folder}.xlsx",
+            media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+    raise HTTPException(status_code=500, detail="Excel 生成失败")
 
 
 # ==========================================================================
@@ -665,6 +780,21 @@ async def list_collected_images():
     
     images = await image_repo.get_recent_images(limit=30)
     return JSONResponse(content={"images": images}, status_code=200)
+
+@app.get("/collect/export")
+async def export_collected_images():
+    """
+    导出所有采集图片的元数据为 JSON。
+    """
+    if not image_repo:
+        raise HTTPException(status_code=503, detail="Image repository not initialized")
+
+    images = await image_repo.get_recent_images(limit=9999)
+    return JSONResponse(
+        content={"images": images, "total": len(images)},
+        status_code=200,
+        headers={"Content-Disposition": "attachment; filename=collected_images.json"}
+    )
 
 @app.delete("/collect/image/{image_id}")
 async def delete_collected_image(image_id: int):

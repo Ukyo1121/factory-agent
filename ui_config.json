@@ -1,0 +1,4 @@
+{
+    "log_root": "/data/suzhiling/factory-agent/logtest",
+    "nesting_root": "/data/suzhiling/factory-agent/logtest/VISUALNESTING"
+}

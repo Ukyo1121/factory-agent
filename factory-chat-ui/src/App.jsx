@@ -3,7 +3,7 @@ import {
     GraduationCap, Archive, BarChart2, Bug,
     Database, ClipboardList, ArrowLeft, Factory,
     ArrowRight, Activity, Server, ShieldCheck, Cpu, Sparkles,
-    Video, MessageSquare, User, LogOut, Loader2, Images
+    Video, MessageSquare, User, LogOut, Loader2, Images, Bot
 } from 'lucide-react';
 import TrainingAssistant from './TrainingAssistant';
 import TrainingVideoManager from './TrainingVideoManager';
@@ -169,10 +169,10 @@ export default function App() {
             <div className="relative z-10 flex flex-col items-center justify-center min-h-screen p-6 md:p-12">
                 {/* 顶部标题区 */}
                 <div className="text-center mb-20 animate-fade-in-down">
-                    <div className="inline-flex items-center justify-center gap-2 px-4 py-2 mb-8 bg-white/80 backdrop-blur-sm border border-blue-100 rounded-full shadow-sm">
-                        <span className="flex w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-                        <span className="text-xs font-semibold tracking-widest text-slate-600 uppercase">System Online · V2.0.0</span>
-                        <Sparkles size={14} className="text-blue-500" />
+                    <div className="inline-flex items-center justify-center gap-3 px-6 py-3 mb-8 bg-white/80 backdrop-blur-sm border border-blue-100 rounded-full shadow-sm">
+                        <Bot size={20} className="text-blue-500" />
+                        <span className="text-sm font-semibold tracking-widest text-slate-600">华工小筑</span>
+                        <Sparkles size={16} className="text-blue-500" />
                     </div>
 
                     <h1 className="text-6xl md:text-7xl font-black text-slate-800 mb-6 tracking-tight">
@@ -192,7 +192,7 @@ export default function App() {
                     {/* 1. 培训助手 */}
                     <ModuleCard
                         title="培训助手"
-                        desc="交互式操作指导,查询设备图纸与规程。"
+                        desc="交互式操作指导,查询设备手册、图纸与培训视频。"
                         icon={<GraduationCap size={28} />}
                         bgColor="from-blue-500 to-blue-600"
                         lightBg="bg-blue-50"
@@ -205,7 +205,7 @@ export default function App() {
                     {/* 2. 采集助手 */}
                     <ModuleCard
                         title="采集助手"
-                        desc="主动录入知识文档,或处理待解答问题。"
+                        desc="主动录入知识文档与图片,或处理待解答问题。"
                         icon={<Archive size={28} />}
                         bgColor="from-orange-500 to-orange-600"
                         lightBg="bg-orange-50"
@@ -218,7 +218,7 @@ export default function App() {
                     {/* 3. 生产监测 */}
                     <ModuleCard
                         title="生产监测"
-                        desc="生产日志可视化,车间热力图与效率分析。"
+                        desc="生产日志可视化,零件全生命周期流转的精准追踪与多工序耗时瓶颈分析。"
                         icon={<BarChart2 size={28} />}
                         bgColor="from-emerald-500 to-emerald-600"
                         lightBg="bg-emerald-50"
@@ -259,7 +259,7 @@ export default function App() {
                                 <span className="text-slate-600">RAG: <span className="text-purple-600 font-semibold">Elasticsearch</span></span>
                             </div>
                         </div>
-                        <div className="text-slate-400 text-xs">© 2026 HGCyber Product Development. All rights reserved.</div>
+                        <div className="text-slate-400 text-xs">© 2026 HGCYBER Data System Co., Ltd. All rights reserved.</div>
                     </div>
                 </div>
             </div>
@@ -332,7 +332,7 @@ export default function App() {
                     <p className="relative text-slate-600 leading-relaxed mb-8">
                         上传和查看培训视频资料。
                         <br />
-                        支持在线播放、搜索和管理视频文件。
+                        支持在线播放、搜索和解析视频文件。
                     </p>
 
                     <div className="relative mt-auto flex items-center gap-2 text-purple-600 font-semibold group-hover:gap-3 transition-all">
