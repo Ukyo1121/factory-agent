@@ -12,18 +12,6 @@
     "is_extracted": true
   },
   {
-    "id": "8d65bc35-11df-466d-b37c-3059686b7f85",
-    "title": "筑视智能焊接系统",
-    "description": null,
-    "filename": "8d65bc35-11df-466d-b37c-3059686b7f85.mp4",
-    "url": "/videos/8d65bc35-11df-466d-b37c-3059686b7f85.mp4",
-    "thumbnail": "/thumbnails/8d65bc35-11df-466d-b37c-3059686b7f85.jpg",
-    "size": 52152710,
-    "duration": 45.256,
-    "uploadedAt": "2026-03-12T19:52:24.558068",
-    "is_extracted": true
-  },
-  {
     "id": "2aad416d-839b-4d19-ab45-f49ad5e1eb70",
     "title": "筑视智能检测系统",
     "description": null,
@@ -33,6 +21,18 @@
     "size": 21370508,
     "duration": 134.828,
     "uploadedAt": "2026-03-27T02:41:14.818979",
+    "is_extracted": true
+  },
+  {
+    "id": "a7be69c9-d422-4fb6-93bc-8ed59e19e039",
+    "title": "筑视智能焊接系统",
+    "description": null,
+    "filename": "a7be69c9-d422-4fb6-93bc-8ed59e19e039.mp4",
+    "url": "/videos/a7be69c9-d422-4fb6-93bc-8ed59e19e039.mp4",
+    "thumbnail": "/thumbnails/a7be69c9-d422-4fb6-93bc-8ed59e19e039.jpg",
+    "size": 52152710,
+    "duration": 45.256,
+    "uploadedAt": "2026-03-27T09:49:14.740782",
     "is_extracted": true
   }
 ]
